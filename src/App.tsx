@@ -4,6 +4,7 @@ import { APP_VERSION } from './config';
 import { store } from './data/store';
 import type { Role, SessionUser } from './data/types';
 import { OpenOrdersProvider } from './state/OpenOrders';
+import { flushAllPending } from './state/pendingSaves';
 import { AdminTab } from './tabs/AdminTab';
 import { DocReportTab } from './tabs/DocReportTab';
 import { HistoryTab } from './tabs/HistoryTab';
@@ -20,7 +21,8 @@ const TABS: { id: TabId; label: string; adminOnly?: boolean }[] = [
 ];
 
 export function App() {
-  return <AuthGate>{(user, role) => <Shell user={user} role={role} />}</AuthGate>;
+  // Keyed by user: another account signing in on the same tab always starts from a clean state.
+  return <AuthGate>{(user, role) => <Shell key={user.id} user={user} role={role} />}</AuthGate>;
 }
 
 function Shell({ user, role }: { user: SessionUser; role: Role }) {
@@ -38,6 +40,12 @@ function Shell({ user, role }: { user: SessionUser; role: Role }) {
     document.addEventListener('mousedown', close);
     return () => document.removeEventListener('mousedown', close);
   }, [menu]);
+
+  async function signOut() {
+    setMenu(false);
+    await flushAllPending(); // write unsaved selections while the session is still valid
+    await store.signOut();
+  }
 
   const show = (id: TabId) => {
     setTab(id);
@@ -77,7 +85,7 @@ function Shell({ user, role }: { user: SessionUser; role: Role }) {
               >
                 🔑 שינוי סיסמה
               </button>
-              <button role="menuitem" onClick={() => store.signOut()}>
+              <button role="menuitem" onClick={() => void signOut()}>
                 ⎋ התנתקות
               </button>
             </div>
@@ -87,13 +95,13 @@ function Shell({ user, role }: { user: SessionUser; role: Role }) {
       <main className="main">
         {/* Tabs stay mounted so switching keeps their work, like the original app. */}
         <div className="tab-root" data-testid="tab-delivery" hidden={tab !== 'delivery'}>
-          <DocReportTab kind="delivery" />
+          <DocReportTab kind="delivery" userId={user.id} />
         </div>
         <div className="tab-root" data-testid="tab-history" hidden={tab !== 'history'}>
           <HistoryTab refreshKey={historyTick} isAdmin={role === 'admin'} />
         </div>
         <div className="tab-root" data-testid="tab-invoice" hidden={tab !== 'invoice'}>
-          <DocReportTab kind="invoice_manual" />
+          <DocReportTab kind="invoice_manual" userId={user.id} />
         </div>
         <div className="tab-root" data-testid="tab-match" hidden={tab !== 'match'}>
           <MatchTab />

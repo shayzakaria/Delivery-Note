@@ -1,8 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FolderDrop } from '../components/FolderDrop';
 import { store } from '../data/store';
-import type { DocLineRecord } from '../data/types';
-import { buildDocCsv, DOC_KINDS, docExportNames, selectionTotal, validateSelections, type DocKind, type DocSelection } from '../lib/docExport';
+import { SessionChangedError, type DocLineRecord } from '../data/types';
+import {
+  buildDocCsv,
+  DOC_KINDS,
+  docExportNames,
+  normalizeDocNumber,
+  selectionTotal,
+  validateSelections,
+  type DocKind,
+  type DocSelection,
+} from '../lib/docExport';
 import { isEmptyDraft, reconcileDrafts, type DraftState } from '../lib/drafts';
 import { byName, csvBlob, saveBlob } from '../lib/files';
 import { dateTimeDisplay, ils, isoToDisplay, parseQty, qtyDisplay, todayISO } from '../lib/format';
@@ -10,13 +19,14 @@ import { distinct, matchesQuery, type PoGroup, type PoLine } from '../lib/openOr
 import { matchPdfs } from '../lib/pdfMatch';
 import { buildZipBlob, type ZipEntry } from '../lib/zip';
 import { useOpenOrders } from '../state/OpenOrders';
+import { registerFlusher } from '../state/pendingSaves';
 
 type View = 'items' | 'export';
 type SaveState = 'idle' | 'saving' | 'saved' | 'error';
 
 const emptyDraft = (): DraftState => ({ docNumber: '', docDate: todayISO(), items: {} });
 
-export function DocReportTab({ kind }: { kind: DocKind }) {
+export function DocReportTab({ kind, userId }: { kind: DocKind; userId: string }) {
   const cfg = DOC_KINDS[kind];
   const isDelivery = kind === 'delivery';
   const oo = useOpenOrders();
@@ -36,8 +46,10 @@ export function DocReportTab({ kind }: { kind: DocKind }) {
   const chain = useRef<Promise<void>>(Promise.resolve());
   const retry = useRef<number | undefined>(undefined);
   const flushRef = useRef<() => Promise<void>>(async () => {});
+  const alive = useRef(true);
 
   const flush = useCallback(async () => {
+    if (!alive.current) return;
     const pos = [...dirty.current];
     dirty.current.clear();
     if (!pos.length) return;
@@ -47,11 +59,13 @@ export function DocReportTab({ kind }: { kind: DocKind }) {
       for (const po of pos) {
         const d = draftsRef.current[po];
         if (isEmptyDraft(d)) toDelete.push(po);
-        else await store.saveDraft({ kind, po, doc_number: d.docNumber, doc_date: d.docDate || null, items: d.items });
+        else await store.saveDraft({ kind, po, doc_number: d.docNumber, doc_date: d.docDate || null, items: d.items }, userId);
       }
-      if (toDelete.length) await store.deleteDrafts(kind, toDelete);
-      setSaveState('saved');
-    } catch {
+      if (toDelete.length) await store.deleteDrafts(kind, toDelete, userId);
+      if (alive.current) setSaveState('saved');
+    } catch (e) {
+      // Never retry into a different session: those edits belong to a user who is gone.
+      if (e instanceof SessionChangedError || !alive.current) return;
       pos.forEach((p) => dirty.current.add(p));
       setSaveState('error');
       window.clearTimeout(retry.current);
@@ -59,8 +73,24 @@ export function DocReportTab({ kind }: { kind: DocKind }) {
         chain.current = chain.current.then(() => flushRef.current());
       }, 5000);
     }
-  }, [kind]);
+  }, [kind, userId]);
   flushRef.current = flush;
+
+  // Unsaved edits are written before sign-out; nothing is written after unmount.
+  useEffect(() => {
+    alive.current = true;
+    const off = registerFlusher(() => {
+      window.clearTimeout(timer.current);
+      chain.current = chain.current.then(() => flushRef.current());
+      return chain.current;
+    });
+    return () => {
+      off();
+      alive.current = false;
+      window.clearTimeout(timer.current);
+      window.clearTimeout(retry.current);
+    };
+  }, []);
 
   const scheduleSave = useCallback(
     (delay = 700) => {
@@ -108,16 +138,17 @@ export function DocReportTab({ kind }: { kind: DocKind }) {
     };
   }, [kind]);
 
-  // Drop selections that are no longer open whenever drafts or the open-orders data change.
+  // Drop selections that are no longer open — but only against open-orders data that
+  // actually loaded. A failed or empty load must never wipe saved work.
   useEffect(() => {
-    if (!draftsLoaded || oo.loading) return;
+    if (!draftsLoaded || !oo.loaded || !oo.info) return;
     const { next, dropped, changed } = reconcileDrafts(draftsRef.current, groupMap);
     if (!changed.length) return;
     setDrafts(next);
     changed.forEach((p) => dirty.current.add(p));
     scheduleSave(50);
     if (dropped) setNotice(`${dropped} פריטים שסומנו בעבר הוסרו מהבחירה — הם כבר אינם פתוחים בקובץ ההזמנות העדכני.`);
-  }, [draftsLoaded, oo.loading, groupMap, scheduleSave]);
+  }, [draftsLoaded, oo.loaded, oo.info, groupMap, scheduleSave]);
 
   const updateDraft = useCallback(
     (po: string, fn: (d: DraftState) => DraftState) => {
@@ -160,10 +191,10 @@ export function DocReportTab({ kind }: { kind: DocKind }) {
         const it = d.items[String(l.line_no)];
         if (it) items.push({ line: l, qty: parseQty(it.q) });
       }
-      if (items.length) out.push({ po: g.po, docNumber: d.docNumber, docDate: d.docDate, items });
+      if (items.length) out.push({ po: g.po, docNumber: normalizeDocNumber(d.docNumber, cfg.pdfPrefix), docDate: d.docDate, items });
     }
     return out;
-  }, [groups, drafts]);
+  }, [groups, drafts, cfg.pdfPrefix]);
   const totalItems = selections.reduce((s, x) => s + x.items.length, 0);
 
   function openPO(po: string) {
@@ -218,12 +249,16 @@ export function DocReportTab({ kind }: { kind: DocKind }) {
 
   // ---------------- PDFs ----------------
   const [pdfs, setPdfs] = useState<Map<string, File>>(new Map());
+  const [folderChosen, setFolderChosen] = useState(false);
   const docNumbers = useMemo(() => selections.map((s) => s.docNumber.trim()).filter(Boolean), [selections]);
   const pdfResult = useMemo(() => matchPdfs([...pdfs.keys()], docNumbers, cfg.pdfPrefix.toLowerCase()), [pdfs, docNumbers, cfg.pdfPrefix]);
 
   // ---------------- previously reported (delivery only) ----------------
   const [reported, setReported] = useState<Map<string, { at: string; batch: string }>>(new Map());
-  const sessionBatches = useRef(new Set<string>());
+  // Batches recorded in this session, by exact CSV content. Re-downloading the very same
+  // report is not a duplicate; any other report reusing a document number is.
+  const recorded = useRef(new Map<string, string>());
+  const currentCsv = useMemo(() => buildDocCsv(selections), [selections]);
   const docKey = docNumbers.join(',');
   useEffect(() => {
     if (!isDelivery || view !== 'export' || !docNumbers.length) {
@@ -237,7 +272,8 @@ export function DocReportTab({ kind }: { kind: DocKind }) {
         .then((rows) => {
           if (!active) return;
           const m = new Map<string, { at: string; batch: string }>();
-          for (const r of rows) if (!sessionBatches.current.has(r.batch_id) && !m.has(r.doc_number)) m.set(r.doc_number, { at: r.created_at, batch: r.batch_id });
+          const same = recorded.current.get(currentCsv);
+          for (const r of rows) if (r.batch_id !== same && !m.has(r.doc_number)) m.set(r.doc_number, { at: r.created_at, batch: r.batch_id });
           setReported(m);
         })
         .catch(() => active && setReported(new Map()));
@@ -246,12 +282,11 @@ export function DocReportTab({ kind }: { kind: DocKind }) {
       active = false;
       window.clearTimeout(t);
     };
-  }, [isDelivery, view, docKey]);
+  }, [isDelivery, view, docKey, currentCsv]);
 
   // ---------------- export ----------------
   const [busy, setBusy] = useState(false);
   const [lastExport, setLastExport] = useState<string | null>(null);
-  const recorded = useRef(new Map<string, string>());
 
   async function doExport(mode: 'zip' | 'csv') {
     if (!selections.length) return alert('לא נבחרו פריטים');
@@ -270,14 +305,16 @@ export function DocReportTab({ kind }: { kind: DocKind }) {
     if (isDelivery) {
       try {
         const rows = await store.deliveryHistoryForDocs(docNumbers);
-        for (const r of rows) if (!sessionBatches.current.has(r.batch_id) && !prev.has(r.doc_number)) prev.set(r.doc_number, r.created_at);
+        const same = recorded.current.get(currentCsv);
+        for (const r of rows) if (r.batch_id !== same && !prev.has(r.doc_number)) prev.set(r.doc_number, r.created_at);
       } catch {
         prev = new Map();
       }
       if (prev.size) warnings.push('תעודות שכבר דווחו בעבר:\n' + [...prev].map(([d, at]) => `  ${d} — ${dateTimeDisplay(at)}`).join('\n'));
     }
     if (mode === 'zip') {
-      if (!pdfs.size) warnings.push('לא נבחרה תיקיית PDF — החבילה תכיל את קובץ ה-CSV בלבד.');
+      if (!folderChosen) warnings.push('לא נבחרה תיקיית PDF — החבילה תכיל את קובץ ה-CSV בלבד.');
+      else if (!pdfs.size) warnings.push('בתיקייה שנבחרה אין קבצי PDF — החבילה תכיל את קובץ ה-CSV בלבד.');
       else if (pdfResult.missing.length) warnings.push('לא נמצא קובץ PDF עבור:\n  ' + pdfResult.missing.join(', '));
     }
     if (warnings.length && !confirm(warnings.join('\n\n') + '\n\nלהמשיך בכל זאת?')) return;
@@ -286,7 +323,18 @@ export function DocReportTab({ kind }: { kind: DocKind }) {
     try {
       const csv = buildDocCsv(selections);
       const names = docExportNames(kind);
-      const matched = pdfResult.matched.map((m) => m.name);
+      const matched = distinct(pdfResult.matched.map((m) => m.name));
+      // Read every PDF and build the archive first: history is written only for a
+      // package that was actually produced.
+      let zip: Blob | null = null;
+      if (mode === 'zip') {
+        const files: ZipEntry[] = [{ name: names.csvPathInZip, data: csv }];
+        for (const name of matched) {
+          const f = pdfs.get(name);
+          if (f) files.push({ name: `${names.folder}/${name}`, data: new Uint8Array(await f.arrayBuffer()) });
+        }
+        zip = buildZipBlob(files);
+      }
       if (!recorded.current.has(csv)) {
         const docLines: DocLineRecord[] = selections.flatMap((s) =>
           s.items.map((it) => ({
@@ -312,29 +360,25 @@ export function DocReportTab({ kind }: { kind: DocKind }) {
             doc_lines: docLines,
           });
           recorded.current.set(csv, id);
-          sessionBatches.current.add(id);
         } catch (e) {
           const msg = e instanceof Error ? e.message : String(e);
           if (!confirm(`שמירת הדיווח בהיסטוריה נכשלה:\n${msg}\n\nלהוריד את הקובץ בכל זאת?`)) return;
         }
       }
-      if (mode === 'csv') saveBlob(csvBlob(csv), names.csvName);
-      else {
-        const files: ZipEntry[] = [{ name: names.csvPathInZip, data: csv }];
-        for (const name of distinct(matched)) {
-          const f = pdfs.get(name);
-          if (f) files.push({ name: `${names.folder}/${name}`, data: new Uint8Array(await f.arrayBuffer()) });
-        }
-        saveBlob(buildZipBlob(files), names.zipName);
-      }
+      if (zip) saveBlob(zip, names.zipName);
+      else saveBlob(csvBlob(csv), names.csvName);
       setLastExport(
         `${mode === 'zip' ? 'החבילה הורדה' : 'קובץ ה-CSV הורד'} (${selections.length} הזמנות, ${totalItems} פריטים` +
-          (mode === 'zip' ? `, ${distinct(matched).length} קבצי PDF` : '') +
+          (mode === 'zip' ? `, ${matched.length} קבצי PDF` : '') +
           ')' +
           (recorded.current.has(csv) ? ' והדיווח נשמר בהיסטוריה.' : '.'),
       );
     } catch (e) {
-      alert('שגיאה בבניית החבילה: ' + (e instanceof Error ? e.message : String(e)));
+      const msg = e instanceof Error ? e.message : String(e);
+      alert(
+        'שגיאה בבניית החבילה: ' +
+          (e instanceof DOMException && e.name === 'NotReadableError' ? 'אחד מקובצי ה-PDF השתנה אחרי שנבחר. בחרו את התיקייה מחדש ונסו שוב.' : msg),
+      );
     } finally {
       setBusy(false);
     }
@@ -399,7 +443,14 @@ export function DocReportTab({ kind }: { kind: DocKind }) {
               <i>נתוני ההזמנות נטענים מאותו קובץ Excel של לשונית תעודות המשלוח — בחרו הזמנות לחשבונית</i>
             </div>
           )}
-          {oo.error && <div className="alert alert-red" style={{ marginTop: 8 }}>{oo.error}</div>}
+          {oo.error && (
+            <div className="alert alert-red" style={{ marginTop: 8 }}>
+              טעינת ההזמנות נכשלה: {oo.error}{' '}
+              <button className="btn btn-sm" onClick={() => void oo.reload()}>
+                נסה שוב
+              </button>
+            </div>
+          )}
           <input
             className="search-input"
             placeholder={isDelivery ? "חפש לפי מס' PO / תיאור / ספרות..." : 'חפש הזמנה...'}
@@ -546,9 +597,19 @@ export function DocReportTab({ kind }: { kind: DocKind }) {
                     onChange={(e) => updateDraft(active.po, (d) => ({ ...d, docDate: e.target.value }))}
                   />
                   {activeDraft.docNumber.trim() && <span className="doc-status">✓ שמור</span>}
-                  {activeDraft.docNumber.trim() && !/^\d+$/.test(activeDraft.docNumber.trim().replace(/^[sSiI]/, '')) && (
-                    <span className="doc-warn">⚠ המספר אמור להכיל ספרות בלבד</span>
-                  )}
+                  {(() => {
+                    const typed = activeDraft.docNumber.trim();
+                    const sent = normalizeDocNumber(typed, cfg.pdfPrefix);
+                    if (!typed) return null;
+                    if (!/^\d+$/.test(sent)) return <span className="doc-warn">⚠ המספר אמור להכיל ספרות בלבד</span>;
+                    if (sent !== typed)
+                      return (
+                        <span className="doc-status">
+                          יישלח לפורטל כ-<bdi dir="ltr">{sent}</bdi> (ללא האות {cfg.pdfPrefix})
+                        </span>
+                      );
+                    return null;
+                  })()}
                 </div>
                 <div className="items-card">
                   <div className="items-card-header">
@@ -703,15 +764,20 @@ export function DocReportTab({ kind }: { kind: DocKind }) {
                   testId={`pdf-input-${kind}`}
                   title="גרור תיקייה לכאן"
                   subtitle={isDelivery ? 'הממשק יאתר אוטומטית PDF לפי מספר תעודה' : 'הממשק מאתר אוטומטית i[מספר].pdf לפי מספר חשבונית'}
-                  onFiles={(files) => setPdfs(byName(files))}
+                  onFiles={(files) => {
+                    setPdfs(byName(files));
+                    setFolderChosen(true);
+                  }}
                 />
-                {pdfs.size > 0 && (
+                {folderChosen && (
                   <div className="pdf-list" data-testid="pdf-list">
-                    <div style={{ fontSize: 12, fontWeight: 700, color: '#444', marginBottom: 6 }}>📄 {pdfs.size} קבצי PDF נטענו:</div>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: pdfs.size ? '#444' : 'var(--red)', marginBottom: 6 }}>
+                      {pdfs.size ? `📄 ${pdfs.size} קבצי PDF נטענו:` : '⚠ לא נמצאו קבצי PDF בתיקייה שנבחרה'}
+                    </div>
                     {pdfResult.matched.map((m) => (
                       <div className="pdf-match-item" key={m.name}>
                         <span className="pdf-ok">✓</span>
-                        <span>{m.name}</span>
+                        <bdi dir="ltr">{m.name}</bdi>
                         <span className="small-gray">
                           → {cfg.docLabelShort} {m.doc}
                         </span>
@@ -729,7 +795,9 @@ export function DocReportTab({ kind }: { kind: DocKind }) {
                     {pdfResult.unmatched.map((n) => (
                       <div className="pdf-match-item" key={'x-' + n}>
                         <span className="pdf-extra">○</span>
-                        <span className="muted">{n}</span>
+                        <bdi dir="ltr" className="muted">
+                          {n}
+                        </bdi>
                         <span className="small-gray muted">לא מזוהה</span>
                       </div>
                     ))}
@@ -770,12 +838,17 @@ export function DocReportTab({ kind }: { kind: DocKind }) {
                   </button>
                 </div>
                 <div className="hint">
-                  שם קובץ: {docExportNames(kind).csvName}
-                  {docNumbers.length
-                    ? ` | קבצי PDF: ${distinct(docNumbers).map((d) => cfg.pdfPrefix + d + '.pdf').join(', ')}`
-                    : isDelivery
-                      ? ' | יש להזין מספרי תעודה'
-                      : ''}
+                  שם קובץ: <bdi dir="ltr">{docExportNames(kind).csvName}</bdi>
+                  {docNumbers.length ? (
+                    <>
+                      {' | קבצי PDF: '}
+                      <bdi dir="ltr">{distinct(docNumbers).map((d) => cfg.pdfPrefix + d + '.pdf').join(', ')}</bdi>
+                    </>
+                  ) : isDelivery ? (
+                    ' | יש להזין מספרי תעודה'
+                  ) : (
+                    ''
+                  )}
                 </div>
               </div>
             </div>

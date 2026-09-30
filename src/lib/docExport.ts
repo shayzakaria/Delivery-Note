@@ -36,6 +36,17 @@ export const DOC_KINDS: Record<DocKind, DocKindConfig> = {
   },
 };
 
+/**
+ * The number as it goes to the portal: trimmed, without the file-name prefix letter
+ * (S for delivery-note scans, i for invoices) that users may copy from the PDF name.
+ * "S700000001" → "700000001". Other text is left as typed (and flagged by validation).
+ */
+export function normalizeDocNumber(raw: string, prefix: string): string {
+  const t = raw.trim();
+  const p = prefix.toLowerCase();
+  return t.length > 1 && t[0].toLowerCase() === p && /^\d+$/.test(t.slice(1)) ? t.slice(1) : t;
+}
+
 /** One selected order: its document number/date and the chosen lines with quantities. */
 export interface DocSelection {
   po: string;
@@ -86,7 +97,7 @@ export function validateSelections(selections: DocSelection[]): SelectionIssues 
     if (s.items.some((it) => !(it.line.site_code > 0))) issues.badSite.push(s.po);
     if (!doc) issues.missingDoc.push(s.po);
     else if (/[,"\r\n]/.test(doc)) issues.unsafeDoc.push(s.po);
-    else if (!/^\d+$/.test(doc.replace(/^[sSiI]/, ''))) issues.nonNumericDoc.push(s.po);
+    else if (!/^\d+$/.test(doc)) issues.nonNumericDoc.push(s.po);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(s.docDate)) issues.missingDate.push(s.po);
     for (const it of s.items) {
       if (!(it.qty > 0) || !Number.isFinite(it.qty)) issues.invalidQty.push({ po: s.po, line_no: it.line.line_no });

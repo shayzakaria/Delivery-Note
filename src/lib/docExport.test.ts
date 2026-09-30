@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildDocCsv, docExportNames, selectionTotal, validateSelections, type DocSelection } from './docExport';
+import { buildDocCsv, docExportNames, normalizeDocNumber, selectionTotal, validateSelections, type DocSelection } from './docExport';
 import type { PoLine } from './openOrders';
 import { matchPdfs, docNumsMatch } from './pdfMatch';
 
@@ -77,10 +77,19 @@ describe('delivery CSV', () => {
     ];
     const v = validateSelections(bad);
     expect(v.missingDoc).toEqual(['A']);
-    expect(v.nonNumericDoc).toEqual(['B']);
+    expect(v.nonNumericDoc).toEqual(['B', 'C']); // validation sees the number as it goes to the portal
     expect(v.missingDate).toEqual(['B']);
     expect(v.invalidQty).toEqual([{ po: 'B', line_no: 2 }]);
     expect(v.overBalance).toEqual([{ po: 'C', line_no: 3, qty: 3, balance: 2 }]);
+  });
+
+  it('drops the file-name prefix the user may copy from the scan name', () => {
+    expect(normalizeDocNumber(' S700000001 ', 'S')).toBe('700000001');
+    expect(normalizeDocNumber('s700000001', 'S')).toBe('700000001');
+    expect(normalizeDocNumber('i300000001', 'i')).toBe('300000001');
+    expect(normalizeDocNumber('I300000001', 'S')).toBe('I300000001'); // wrong prefix for this tab: left for validation
+    expect(normalizeDocNumber('S', 'S')).toBe('S');
+    expect(normalizeDocNumber('SX1', 'S')).toBe('SX1');
   });
 
   it('blocks values that would break the CSV and orders without a site code', () => {

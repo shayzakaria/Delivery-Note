@@ -5,6 +5,7 @@ import { byName, csvBlob, saveBlob } from '../lib/files';
 import { dateTimeDisplay, fileStamp, ils } from '../lib/format';
 import {
   buildHistoryIndex,
+  newestFirst,
   buildMatchExport,
   errorsCsvFull,
   errorsCsvPackage,
@@ -57,18 +58,16 @@ export function MatchTab() {
   );
   const rows = result?.rows ?? [];
 
-  // Default selection: all "ok" invoices once per pair of loaded files. Later recalculations
-  // (VAT / tolerance) keep the user's choice and only drop invoices that stopped being ok.
+  // Default selection: all "ok" invoices once per pair of loaded files. Recalculations
+  // (VAT / tolerance, including half-typed values) never change the stored choice;
+  // only invoices that are ok at export time are written (selected ∩ ok).
   const defaultedFor = useRef<[unknown, unknown] | null>(null);
   useEffect(() => {
     if (!result) return;
     const fresh = !defaultedFor.current || defaultedFor.current[0] !== portal || defaultedFor.current[1] !== invoices;
+    if (!fresh) return;
     defaultedFor.current = [portal, invoices];
-    const okNow = new Set(result.rows.filter((r) => r.status === 'ok').map((r) => r.invNo));
-    setSelected((prev) => {
-      if (fresh) return okNow;
-      return new Set([...prev].filter((k) => okNow.has(k)));
-    });
+    setSelected(new Set(result.rows.filter((r) => r.status === 'ok').map((r) => r.invNo)));
   }, [result, portal, invoices]);
 
   // Order-line numbers reported earlier through the delivery tab, and invoices already exported.
@@ -81,7 +80,7 @@ export function MatchTab() {
     Promise.all([store.deliveryHistoryForDocs(dns), store.invoiceHistoryFor(invs)])
       .then(([lines, prev]) => {
         if (!active) return;
-        setHistory(buildHistoryIndex(lines));
+        setHistory(buildHistoryIndex(newestFirst(lines)));
         const m = new Map<string, string>();
         for (const p of prev) if (!m.has(p.inv_no)) m.set(p.inv_no, p.created_at);
         setPrevInv(m);
@@ -97,15 +96,17 @@ export function MatchTab() {
     if (!file) return;
     try {
       const sheet = await readSheet(file);
+      // Parse first: a file that fails to load must not discard any typed values.
+      const map = which === 'portal' ? parsePortalDN(sheet) : null;
+      const list = which === 'inv' ? parseInvoiceReport(sheet) : null;
       // Manual line numbers are tied to line positions — they don't survive a new file.
       setOverrides({});
       setOpenDetail(new Set());
-      if (which === 'portal') {
-        const map = parsePortalDN(sheet);
+      if (map) {
         setPortal(map);
         setPortalMsg(`✓ ${file.name} — ${map.size} תעודות משלוח`);
-      } else {
-        const list = parseInvoiceReport(sheet);
+      }
+      if (list) {
         setAllocEdit({});
         setInvoices(list);
         setInvMsg(`✓ ${file.name} — ${list.length} חשבוניות`);
@@ -129,7 +130,9 @@ export function MatchTab() {
       zeroQty = 0;
     const mismatch: MatchRow[] = [];
     const badAlloc: string[] = [];
+    const noSite: string[] = [];
     for (const r of willExport) {
+      if (!(r.siteCode || result?.siteCodeByName[r.site])) noSite.push(r.invNo);
       dropped += r.lines.filter((l) => l.price < MIN_LINE_PRICE).length;
       noLine += resolveLines(r, history, overrides).filter((x) => x.req && !x.line).length;
       if (Math.abs(r.diff ?? 0) > 0.005) rounded++;
@@ -138,8 +141,8 @@ export function MatchTab() {
       const alloc = allocEdit[r.invNo] !== undefined ? allocEdit[r.invNo] : r.alloc;
       if (/[,"\r\n]/.test(alloc)) badAlloc.push(r.invNo);
     }
-    return { dropped, noLine, rounded, zeroQty, mismatch, badAlloc };
-  }, [willExport, history, overrides, vat, tol, allocEdit]);
+    return { dropped, noLine, rounded, zeroQty, mismatch, badAlloc, noSite };
+  }, [willExport, history, overrides, vat, tol, allocEdit, result]);
   const prevSelected = willExport.filter((r) => prevInv.has(r.invNo));
 
   function toggleSel(inv: string, on: boolean) {
@@ -158,6 +161,15 @@ export function MatchTab() {
   function setLine(r: MatchRow, idx: number, val: string) {
     const k = lineKey(r.key, idx);
     setOverrides((prev) => ({ ...prev, [k]: { ...prev[k], line: val.trim() } }));
+  }
+
+  function resetLine(r: MatchRow, idx: number) {
+    const k = lineKey(r.key, idx);
+    setOverrides((prev) => {
+      const next = { ...prev };
+      delete next[k];
+      return next;
+    });
   }
 
   function downloadErrors() {
@@ -192,6 +204,8 @@ export function MatchTab() {
     }
     if (!ex.lines.length) return alert('אין שורות לייצוא');
     if (exportStats.badAlloc.length) return alert('מספר הקצאה מכיל פסיק או מירכאות — יש לתקן:\n' + exportStats.badAlloc.join('\n'));
+    if (exportStats.noSite.length)
+      return alert('לחשבוניות הבאות אין קוד אתר (מס.פרוייקט שו"ב) בדוח החשבוניות — יש להשלים בדוח ולטעון מחדש:\n' + exportStats.noSite.join('\n'));
 
     const warnings: string[] = [];
     if (exportStats.mismatch.length)
@@ -490,7 +504,13 @@ export function MatchTab() {
                           {r.status === 'ok' && isOpen && (
                             <tr>
                               <td colSpan={10} className="detail-cell">
-                                <MatchDetail r={r} history={history} overrides={overrides} onLine={(idx, val) => setLine(r, idx, val)} />
+                                <MatchDetail
+                                  r={r}
+                                  history={history}
+                                  overrides={overrides}
+                                  onLine={(idx, val) => setLine(r, idx, val)}
+                                  onReset={(idx) => resetLine(r, idx)}
+                                />
                               </td>
                             </tr>
                           )}
@@ -575,6 +595,12 @@ export function MatchTab() {
                     </span>
                   </>
                 )}
+                {exportStats.noSite.length > 0 && (
+                  <>
+                    <br />
+                    <span style={{ color: 'var(--red)' }}>⚠ חשבוניות ללא קוד אתר: {exportStats.noSite.join(', ')}</span>
+                  </>
+                )}
                 {exportStats.badAlloc.length > 0 && (
                   <>
                     <br />
@@ -642,11 +668,13 @@ function MatchDetail({
   history,
   overrides,
   onLine,
+  onReset,
 }: {
   r: MatchRow;
   history: Map<string, HistEntry>;
   overrides: Record<string, LineOverride>;
   onLine: (idx: number, val: string) => void;
+  onReset: (idx: number) => void;
 }) {
   const res = resolveLines(r, history, overrides);
   const missing = res.filter((x) => x.req && !x.line).length;
@@ -693,7 +721,14 @@ function MatchDetail({
                     aria-label={`שורת הזמנה עבור ${l.sku}`}
                   />
                 </td>
-                <td className="small-gray">{src}</td>
+                <td className="small-gray">
+                  {src}
+                  {src === 'ידני' && (
+                    <button className="linklike" style={{ color: 'var(--blue)', marginRight: 6 }} onClick={() => onReset(idx)} title="בטל את הערך הידני">
+                      ↺ בטל
+                    </button>
+                  )}
+                </td>
               </tr>
             );
           })}

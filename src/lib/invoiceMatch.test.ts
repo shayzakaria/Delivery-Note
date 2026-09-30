@@ -10,6 +10,7 @@ import {
   lineKey,
   exportedGross,
   findHistLine,
+  newestFirst,
   lineNoRequired,
   linesMatchInvoice,
   parseInvoiceReport,
@@ -144,6 +145,25 @@ describe('matching', () => {
       ['PO-H', '7', 'ידני'],
       ['PO-H', '9', 'היסטוריה'],
     ]);
+  });
+
+  it('prefers the newest export of a delivery note (a corrected re-export wins)', () => {
+    const lines = [
+      { doc_number: '200', po: 'PO200', line_no: 3, sku: '7001', qty: 1, price: 540, created_at: '2026-09-01T10:00:00Z' },
+      { doc_number: '200', po: 'PO200', line_no: 4, sku: '7001', qty: 1, price: 108, created_at: '2026-09-01T10:00:00Z' },
+      { doc_number: '200', po: 'PO200', line_no: 7, sku: '7001', qty: 1, price: 540, created_at: '2026-09-02T08:00:00Z' },
+    ];
+    const res = resolveLines(rows[1], buildHistoryIndex(newestFirst(lines)), {});
+    expect(res.map((r) => [r.l.price, r.line])).toEqual([
+      [108, '4'],
+      [540, '7'],
+    ]);
+  });
+
+  it('keeps an emptied manual line number empty instead of snapping back to history', () => {
+    const hist = buildHistoryIndex([{ doc_number: '200', po: 'PO200', line_no: 4, sku: '7001', qty: 1, price: 108 }]);
+    const res = resolveLines(rows[1], hist, { [lineKey(rows[1].key, 0)]: { line: '' } });
+    expect([res[0].line, res[0].src]).toEqual(['', 'ידני']);
   });
 
   it('lets manual overrides win over history', () => {

@@ -17,6 +17,11 @@ import type {
   Role,
   SessionUser,
 } from './types';
+import { SessionChangedError } from './types';
+
+// Test hook: `localStorage['mody_mock_fail_loads'] = N` makes the next N open-order
+// loads fail (use a large N and reset it to 0 to fail "until further notice"), to
+// exercise error handling. Exists only in this demo store.
 
 interface Batch extends BatchSummary {
   csv: string;
@@ -118,6 +123,11 @@ export class MockStore implements DataStore {
 
   async latestImport(): Promise<ImportInfo | null> {
     this.requireMember();
+    const failures = Number(localStorage.getItem('mody_mock_fail_loads') || 0);
+    if (failures > 0) {
+      localStorage.setItem('mody_mock_fail_loads', String(failures - 1));
+      throw new Error('אין חיבור לשרת. בדוק את החיבור לאינטרנט ונסה שוב.');
+    }
     const i = this.db.imports[0];
     if (!i) return null;
     const { lines: _lines, ...info } = i;
@@ -153,15 +163,17 @@ export class MockStore implements DataStore {
     return this.db.drafts.filter((d) => d.user_id === u.id && d.kind === kind).map(({ user_id: _u, ...d }) => d);
   }
 
-  async saveDraft(d: DraftRecord) {
+  async saveDraft(d: DraftRecord, userId: string) {
     const u = this.requireMember();
+    if (u.id !== userId) throw new SessionChangedError();
     this.db.drafts = this.db.drafts.filter((x) => !(x.user_id === u.id && x.kind === d.kind && x.po === d.po));
     this.db.drafts.push({ ...d, user_id: u.id });
     this.save();
   }
 
-  async deleteDrafts(kind: DocKind, pos: string[]) {
+  async deleteDrafts(kind: DocKind, pos: string[], userId: string) {
     const u = this.requireMember();
+    if (u.id !== userId) throw new SessionChangedError();
     const set = new Set(pos);
     this.db.drafts = this.db.drafts.filter((x) => !(x.user_id === u.id && x.kind === kind && set.has(x.po)));
     this.save();

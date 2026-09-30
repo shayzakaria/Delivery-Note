@@ -16,6 +16,7 @@ import type {
   Role,
   SessionUser,
 } from './types';
+import { SessionChangedError } from './types';
 
 const PAGE = 1000; // PostgREST returns at most 1000 rows per request
 
@@ -165,13 +166,17 @@ export class SupabaseStore implements DataStore {
     return rows.map((r) => ({ ...r, items: r.items ?? {} }));
   }
 
-  async saveDraft(d: DraftRecord): Promise<void> {
+  private async requireUser(userId: string): Promise<void> {
     const user = await this.getUser();
-    if (!user) throw new Error('לא מחובר');
+    if (!user || user.id !== userId) throw new SessionChangedError();
+  }
+
+  async saveDraft(d: DraftRecord, userId: string): Promise<void> {
+    await this.requireUser(userId);
     check(
       await this.sb.from('drafts').upsert(
         {
-          user_id: user.id,
+          user_id: userId,
           kind: d.kind,
           po: d.po,
           doc_number: d.doc_number,
@@ -184,9 +189,10 @@ export class SupabaseStore implements DataStore {
     );
   }
 
-  async deleteDrafts(kind: DocKind, pos: string[]): Promise<void> {
+  async deleteDrafts(kind: DocKind, pos: string[], userId: string): Promise<void> {
+    await this.requireUser(userId);
     for (const part of chunk(pos, 100)) {
-      check(await this.sb.from('drafts').delete().eq('kind', kind).in('po', part));
+      check(await this.sb.from('drafts').delete().eq('user_id', userId).eq('kind', kind).in('po', part));
     }
   }
 

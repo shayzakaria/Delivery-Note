@@ -11,8 +11,13 @@ export interface SheetData {
   date1904: boolean;
 }
 
+/**
+ * Whether a cell has any value. Like the original (which read display text), the
+ * number 0 counts as present — so a row with site code 0 is still counted for line
+ * numbering and is then rejected by validation instead of silently shifting lines.
+ */
 export function isPresent(v: Cell | undefined): boolean {
-  return v !== null && v !== undefined && v !== '' && v !== false && v !== 0;
+  return v !== null && v !== undefined && v !== '';
 }
 
 /** Cell → trimmed text. Numbers are printed the way JavaScript prints them (10000074 → "10000074"). */

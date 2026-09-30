@@ -47,9 +47,17 @@ export function cleanNum(x: number): number {
   return Number.isFinite(x) ? parseFloat(x.toFixed(9)) : 0;
 }
 
-/** Parses a user-typed quantity. Returns NaN for anything that is not a positive-or-zero number. */
+/**
+ * Parses a user-typed quantity. Commas are accepted only as thousands separators
+ * ("1,200" → 1200, as the app displays numbers); any other comma is ambiguous and
+ * makes the value invalid (NaN), as does anything that is not a plain non-negative number.
+ */
 export function parseQty(raw: string): number {
-  const s = raw.trim().replace(',', '.');
+  let s = raw.trim();
+  if (s.includes(',')) {
+    if (!/^\d{1,3}(,\d{3})+(\.\d+)?$/.test(s)) return NaN;
+    s = s.replace(/,/g, '');
+  }
   if (!/^\d*\.?\d+$|^\d+\.$/.test(s)) return NaN;
   return cleanNum(parseFloat(s));
 }

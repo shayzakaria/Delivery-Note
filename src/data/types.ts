@@ -87,6 +87,14 @@ export interface Member {
 
 export type AuthEvent = 'SIGNED_IN' | 'SIGNED_OUT' | 'PASSWORD_RECOVERY' | 'OTHER';
 
+/** Thrown when a write was prepared for one user but the session now belongs to another (or none). */
+export class SessionChangedError extends Error {
+  constructor() {
+    super('ההתחברות השתנתה — השינוי לא נשמר');
+    this.name = 'SessionChangedError';
+  }
+}
+
 export interface DataStore {
   readonly mode: 'supabase' | 'mock';
 
@@ -106,8 +114,9 @@ export interface DataStore {
 
   // --- drafts ---
   loadDrafts(kind: DocKind): Promise<DraftRecord[]>;
-  saveDraft(d: DraftRecord): Promise<void>;
-  deleteDrafts(kind: DocKind, pos: string[]): Promise<void>;
+  /** Writes only if `userId` is still the signed-in user (else SessionChangedError). */
+  saveDraft(d: DraftRecord, userId: string): Promise<void>;
+  deleteDrafts(kind: DocKind, pos: string[], userId: string): Promise<void>;
 
   // --- export history ---
   recordExport(input: ExportInput): Promise<string>;

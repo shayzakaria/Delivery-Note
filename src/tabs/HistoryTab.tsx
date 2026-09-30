@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useState } from 'react';
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import { store } from '../data/store';
 import type { BatchSummary, DocLineRecord, ExportKind } from '../data/types';
 import { csvBlob, saveBlob } from '../lib/files';
@@ -30,7 +30,8 @@ export function HistoryTab({ refreshKey, isAdmin }: { refreshKey: number; isAdmi
   const [kind, setKind] = useState<'all' | ExportKind>('all');
   const [search, setSearch] = useState('');
   const [open, setOpen] = useState<string | null>(null);
-  const [detail, setDetail] = useState<{ doc: DocLineRecord[]; inv: InvoiceCsvLine[] } | null>(null);
+  const [detail, setDetail] = useState<{ id: string; doc: DocLineRecord[]; inv: InvoiceCsvLine[] } | null>(null);
+  const requested = useRef<string | null>(null);
 
   const load = useCallback(async () => {
     setError(null);
@@ -52,13 +53,15 @@ export function HistoryTab({ refreshKey, isAdmin }: { refreshKey: number; isAdmi
     }
     setOpen(b.id);
     setDetail(null);
+    requested.current = b.id;
     try {
       const [doc, inv] = await Promise.all([
         b.kind === 'invoice_match' ? Promise.resolve([]) : store.batchDocLines(b.id),
         b.kind === 'invoice_match' ? store.batchInvoiceLines(b.id) : Promise.resolve([]),
       ]);
-      setDetail({ doc, inv });
+      if (requested.current === b.id) setDetail({ id: b.id, doc, inv }); // ignore late answers for another row
     } catch (e) {
+      if (requested.current !== b.id) return;
       alert(e instanceof Error ? e.message : String(e));
       setOpen(null);
     }
@@ -162,7 +165,7 @@ export function HistoryTab({ refreshKey, isAdmin }: { refreshKey: number; isAdmi
                       {open === b.id && (
                         <tr>
                           <td colSpan={7} className="detail-cell">
-                            {!detail ? (
+                            {detail?.id !== b.id ? (
                               <div className="muted" style={{ padding: 8 }}>
                                 טוען…
                               </div>
@@ -189,7 +192,7 @@ function BatchDetail({ b, doc, inv }: { b: BatchSummary; doc: DocLineRecord[]; i
   return (
     <div style={{ paddingTop: 8 }}>
       <div className="small-gray" style={{ marginBottom: 6 }}>
-        קובץ: {b.file_name}
+        קובץ: <bdi dir="ltr">{b.file_name}</bdi>
         {b.pdf_names.length ? ` · ${b.pdf_names.length} קבצי PDF: ${b.pdf_names.join(', ')}` : ''}
       </div>
       <div className="bordered" style={{ background: '#fff' }}>

@@ -76,7 +76,10 @@ button, input, select { font-family: inherit; }
 .upload-label { display: flex; align-items: center; gap: 7px; background: #e8f1ff; border: 1.5px dashed var(--blue); border-radius: 6px; padding: 7px 10px; cursor: pointer; font-size: 12px; color: var(--blue); font-weight: 600; }
 .upload-label.purple { background: #f3e8ff; border-color: #7c3aed; color: #6d28d9; }
 .upload-label.busy { opacity: .6; pointer-events: none; }
-.upload-label input { display: none; }
+.upload-label { position: relative; }
+/* visually hidden but still focusable, so the upload works from the keyboard */
+.upload-label input { position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden; clip: rect(0 0 0 0); }
+.upload-label:focus-within { outline: 2px solid var(--blue); outline-offset: 2px; }
 .file-status { font-size: 11px; color: var(--green); font-weight: 600; margin-bottom: 5px; }
 .file-status.warn { color: var(--amber); }
 .saved-bar { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-top: 5px; font-size: 11px; color: #065f46; background: #d1fae5; border-radius: 5px; padding: 4px 8px; }

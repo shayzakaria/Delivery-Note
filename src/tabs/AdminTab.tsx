@@ -89,7 +89,11 @@ export function AdminTab({ currentEmail }: { currentEmail: string }) {
                         <select
                           value={m.role}
                           disabled={busy}
-                          onChange={(e) => void run(() => store.setMemberRole(m.email, e.target.value as Role))}
+                          onChange={(e) => {
+                            const role = e.target.value as Role;
+                            if (m.email === currentEmail.toLowerCase() && role !== 'admin' && !confirm('להסיר ממך את הרשאת המנהל? לא תוכל/י לנהל משתמשים לאחר מכן.')) return;
+                            void run(() => store.setMemberRole(m.email, role));
+                          }}
                           aria-label={`הרשאה עבור ${m.email}`}
                         >
                           <option value="user">משתמש</option>

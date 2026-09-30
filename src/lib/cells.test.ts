@@ -27,12 +27,12 @@ describe('cell conversion', () => {
     expect(text(null)).toBe('');
   });
 
-  it('treats empty and zero cells as absent', () => {
+  it('treats only empty cells as absent (0 counts, like the original display text "0")', () => {
     expect(isPresent('x')).toBe(true);
     expect(isPresent(5)).toBe(true);
+    expect(isPresent(0)).toBe(true);
     expect(isPresent('')).toBe(false);
     expect(isPresent(null)).toBe(false);
-    expect(isPresent(0)).toBe(false);
   });
 
   it('converts Excel serial dates without timezone drift', () => {
@@ -67,7 +67,12 @@ describe('formatting', () => {
   it('parses typed quantities strictly', () => {
     expect(parseQty('4.08')).toBe(4.08);
     expect(parseQty('37')).toBe(37);
-    expect(parseQty('4,5')).toBe(4.5);
+    // commas are thousands separators only — "1,200" is 1200, never 1.2
+    expect(parseQty('1,200')).toBe(1200);
+    expect(parseQty('12,345.5')).toBe(12345.5);
+    expect(parseQty('1,000,000')).toBe(1000000);
+    expect(parseQty('4,5')).toBeNaN();
+    expect(parseQty('1,20')).toBeNaN();
     expect(parseQty('')).toBeNaN();
     expect(parseQty('-1')).toBeNaN();
     expect(parseQty('1e3')).toBeNaN();

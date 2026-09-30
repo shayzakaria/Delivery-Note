@@ -251,7 +251,18 @@ export interface HistEntry {
   lines: HistLine[];
 }
 
-/** delivery-note number → previously reported lines (from the export history). */
+/**
+ * Orders history newest export first (stable within an export), so a corrected
+ * re-export of a delivery note wins over the earlier one — as in the original app.
+ */
+export function newestFirst<T extends { created_at: string }>(lines: T[]): T[] {
+  return lines
+    .map((l, i) => ({ l, i, t: Date.parse(l.created_at) || 0 }))
+    .sort((a, b) => b.t - a.t || a.i - b.i)
+    .map((x) => x.l);
+}
+
+/** delivery-note number → previously reported lines (from the export history, newest first). */
 export function buildHistoryIndex(lines: HistLine[]): Map<string, HistEntry> {
   const idx = new Map<string, HistEntry>();
   for (const l of lines) {
@@ -309,8 +320,9 @@ export function resolveLines(r: MatchRow, history: Map<string, HistEntry>, overr
     // Consume the history match even when overridden, so later lines keep their matches.
     const h = findHistLine(hist, l.sku, l.price, l.qty, used);
     const histPo = h ? h.po || hist?.po || '' : '';
+    // A typed value (even an emptied field) stays manual until it is explicitly reset.
     const ov = overrides[lineKey(r.key, idx)];
-    if (ov && (ov.po || ov.line)) return { l, req, po: ov.po || histPo || r.po || '', line: ov.line || '', src: 'ידני' };
+    if (ov) return { l, req, po: ov.po || histPo || r.po || '', line: ov.line ?? '', src: 'ידני' };
     if (h) return { l, req, po: histPo || r.po || '', line: h.line_no == null ? '' : String(h.line_no), src: 'היסטוריה' };
     return { l, req, po: r.po || '', line: '', src: req ? 'נדרש' : 'לא נדרש' };
   });

@@ -18,6 +18,25 @@ function sheet() {
   );
 }
 
+describe('parseOpenOrders line numbering', () => {
+  it('counts a row whose site code is 0, so later lines keep their numbers', () => {
+    const lines = parseOpenOrders(
+      parseWorkbook(
+        xlsxBytes([
+          openOrderRow({ site: 10000074, po: 'PO1', sku: 'A', balance: 1, price: 1 }),
+          openOrderRow({ site: 0, po: 'PO1', sku: 'B', balance: 1, price: 1 }),
+          openOrderRow({ site: 10000074, po: 'PO1', sku: 'C', balance: 1, price: 1 }),
+        ]),
+      ),
+    );
+    expect(lines.map((l) => [l.sku, l.line_no, l.site_code])).toEqual([
+      ['A', 1, 10000074],
+      ['B', 2, 0], // kept, and rejected at export by the site-code check
+      ['C', 3, 10000074],
+    ]);
+  });
+});
+
 describe('parseOpenOrders', () => {
   const lines = parseOpenOrders(sheet());
 
