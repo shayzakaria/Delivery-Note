@@ -28,7 +28,7 @@ export function Login() {
   return (
     <div className="auth-page">
       <form className="auth-card" onSubmit={submit}>
-        <div className="wordmark">MODY</div>
+        <img className="logo-auth" src="/mody-logo-light.png" alt="MODY" />
         <h1>{mode === 'login' ? 'דיווח משלוחים · סולל בונה' : 'איפוס סיסמה'}</h1>
         {store.mode === 'mock' && <div className="msg ok">מצב הדגמה — ניתן להתחבר עם demo@mody.co.il וכל סיסמה.</div>}
         <label htmlFor="email">אימייל</label>
@@ -90,7 +90,7 @@ export function SetNewPassword({ onDone }: { onDone: () => void }) {
   return (
     <div className="auth-page">
       <form className="auth-card" onSubmit={submit}>
-        <div className="wordmark">MODY</div>
+        <img className="logo-auth" src="/mody-logo-light.png" alt="MODY" />
         <h1>בחירת סיסמה חדשה</h1>
         <label htmlFor="pw1">סיסמה חדשה</label>
         <input id="pw1" type="password" autoComplete="new-password" value={pw} onChange={(e) => setPw(e.target.value)} />

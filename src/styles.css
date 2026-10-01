@@ -37,7 +37,6 @@ button, input, select { font-family: inherit; }
   border-bottom: 2px solid var(--mody-red);
 }
 .brand { display: flex; align-items: center; gap: 10px; margin-left: 18px; color: #fff; white-space: nowrap; }
-.wordmark { direction: ltr; font-weight: 700; font-size: 19px; letter-spacing: .14em; color: #fff; line-height: 1; padding-bottom: 3px; border-bottom: 2px solid var(--mody-red); }
 .brand-sub { font-size: 13px; font-weight: 300; color: #ccc; border-right: 1px solid #444; padding-right: 10px; }
 .main-tab {
   padding: 0 16px;
@@ -214,7 +213,6 @@ tbody tr:hover { background: #fafbff; }
 /* ---------- auth ---------- */
 .auth-page { min-height: 100%; display: flex; align-items: center; justify-content: center; background: var(--mody-black); padding: 20px; }
 .auth-card { background: #fff; width: 100%; max-width: 380px; border-radius: 4px; padding: 32px 28px; border-top: 3px solid var(--mody-red); }
-.auth-card .wordmark { color: var(--mody-black); font-size: 26px; display: table; margin: 0 auto 10px; }
 .auth-card h1 { font-size: 18px; font-weight: 300; text-align: center; margin-bottom: 22px; color: #333; }
 .auth-card label { display: block; font-size: 12px; font-weight: 600; color: #444; margin: 12px 0 5px; }
 .auth-card input { width: 100%; padding: 10px 12px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; direction: ltr; text-align: left; }
@@ -245,3 +243,7 @@ tbody tr:hover { background: #fafbff; }
   .brand-sub { display: none; }
   .topbar { overflow-x: auto; }
 }
+
+/* MODY logo: white version on the black top bar, black version on white cards */
+.logo-header { height: 26px; width: auto; display: block; }
+.auth-card .logo-auth { height: 34px; width: auto; display: block; margin: 0 auto 12px; }

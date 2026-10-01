@@ -76,7 +76,7 @@ export function AuthGate({ children }: { children: (user: SessionUser, role: Rol
       return (
         <div className="auth-page">
           <div className="auth-card">
-            <div className="wordmark">MODY</div>
+            <img className="logo-auth" src="/mody-logo-light.png" alt="MODY" />
             <h1>{state.phase === 'no-access' ? 'אין הרשאת גישה' : 'שגיאה בטעינה'}</h1>
             <p style={{ fontSize: 13, color: '#444', lineHeight: 1.7 }}>
               {state.phase === 'no-access' ? (

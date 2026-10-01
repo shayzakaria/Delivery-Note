@@ -56,7 +56,7 @@ function Shell({ user, role }: { user: SessionUser; role: Role }) {
     <OpenOrdersProvider>
       <nav className="topbar" aria-label="ניווט ראשי">
         <div className="brand">
-          <span className="wordmark">MODY</span>
+          <img className="logo-header" src="/mody-logo-dark.png" alt="MODY" />
           <span className="brand-sub">דיווח לפורטל סולל בונה</span>
         </div>
         {TABS.filter((t) => !t.adminOnly || role === 'admin').map((t) => (
