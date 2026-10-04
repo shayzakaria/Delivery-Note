@@ -17,7 +17,7 @@ const TABS: { id: TabId; label: string; adminOnly?: boolean }[] = [
   { id: 'history', label: '📋 היסטוריה' },
   { id: 'invoice', label: '🧾 חשבוניות' },
   { id: 'match', label: '⚖ התאמת חשבוניות' },
-  { id: 'admin', label: '👥 משתמשים', adminOnly: true },
+  { id: 'admin', label: '⚙ ניהול', adminOnly: true },
 ];
 
 export function App() {

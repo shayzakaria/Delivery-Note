@@ -104,6 +104,14 @@ export class MockStore implements DataStore {
     this.emit('SIGNED_IN');
   }
 
+  async signUp(email: string, password: string) {
+    const clean = email.trim().toLowerCase();
+    if (!this.db.members.some((m) => m.email === clean)) throw new Error('כתובת המייל אינה ברשימת המורשים להרשמה. יש לפנות למנהל המערכת.');
+    if (password.length < 8) throw new Error('יש לבחור סיסמה של 8 תווים לפחות');
+    await this.signIn(clean, password);
+    return { needsConfirmation: false };
+  }
+
   async signOut() {
     this.db.user = null;
     this.save();
@@ -253,8 +261,12 @@ export class MockStore implements DataStore {
   }
 
   async listMembers() {
-    this.requireMember();
-    return [...this.db.members];
+    const u = this.requireMember();
+    const admin = this.db.members.find((m) => m.email === u.email.toLowerCase())?.role === 'admin';
+    // The demo has no account table: the signed-in user counts as registered, everyone else as not yet.
+    return this.db.members.map((m) =>
+      admin ? { ...m, account_status: m.email === u.email.toLowerCase() ? ('active' as const) : ('none' as const), last_sign_in_at: null } : { ...m },
+    );
   }
 
   async addMember(email: string, role: Role, displayName: string) {

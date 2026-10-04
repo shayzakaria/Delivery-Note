@@ -92,7 +92,7 @@ test.describe.serial('review regressions', () => {
 
   test('edits made right before sign-out are saved for their owner and never leak to the next user', async () => {
     // add a second member
-    await page.getByRole('button', { name: '👥 משתמשים' }).click();
+    await page.getByRole('button', { name: '⚙ ניהול' }).click();
     await tab(page, 'admin').getByPlaceholder('אימייל').fill('user2@mody.co.il');
     await tab(page, 'admin').getByRole('button', { name: '+ הוסף' }).click();
     await expect(tab(page, 'admin').getByText('user2@mody.co.il')).toBeVisible();

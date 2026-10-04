@@ -163,7 +163,7 @@ test.describe.serial('full reporting flow', () => {
   });
 
   test('admin can add members; strangers get no access', async () => {
-    await page.getByRole('button', { name: '👥 משתמשים' }).click();
+    await page.getByRole('button', { name: '⚙ ניהול' }).click();
     const a = tab(page, 'admin');
     await a.getByPlaceholder('אימייל').fill('User2@Mody.co.il');
     await page.getByRole('button', { name: '+ הוסף' }).click();
@@ -176,5 +176,30 @@ test.describe.serial('full reporting flow', () => {
     await page.getByRole('menuitem', { name: /התנתקות/ }).click();
     await login(page, 'stranger@example.com');
     await expect(page.getByText('אין הרשאת גישה')).toBeVisible();
+    await page.getByRole('button', { name: 'התנתק' }).click();
+  });
+
+  test('only listed emails can sign up; a new member lands without the admin panel', async () => {
+    const signUp = async (email: string) => {
+      await page.getByLabel('אימייל').fill(email);
+      await page.getByLabel('בחירת סיסמה').fill('Secret-123');
+      await page.getByLabel('אימות סיסמה').fill('Secret-123');
+      await page.getByRole('button', { name: 'הרשמה', exact: true }).click();
+    };
+    await page.getByRole('button', { name: 'אין לך חשבון? הרשמה' }).click();
+    await expect(page.getByRole('heading', { name: 'הרשמה לאתר' })).toBeVisible();
+
+    await signUp('stranger@example.com');
+    await expect(page.getByText('כתובת המייל אינה ברשימת המורשים להרשמה')).toBeVisible();
+
+    await page.getByLabel('אימייל').fill('user2@mody.co.il');
+    await page.getByLabel('בחירת סיסמה').fill('Secret-123');
+    await page.getByLabel('אימות סיסמה').fill('Other-123');
+    await page.getByRole('button', { name: 'הרשמה', exact: true }).click();
+    await expect(page.getByText('הסיסמאות אינן זהות')).toBeVisible();
+
+    await signUp('USER2@mody.co.il');
+    await expect(page.getByRole('button', { name: '📦 תעודות משלוח' })).toBeVisible();
+    await expect(page.getByRole('button', { name: '⚙ ניהול' })).toHaveCount(0);
   });
 });

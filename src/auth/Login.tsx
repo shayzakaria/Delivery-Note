@@ -1,20 +1,48 @@
 import { useState, type FormEvent } from 'react';
 import { store } from '../data/store';
 
+type Mode = 'login' | 'signup' | 'reset';
+
+const TITLES: Record<Mode, string> = {
+  login: 'דיווח משלוחים · סולל בונה',
+  signup: 'הרשמה לאתר',
+  reset: 'איפוס סיסמה',
+};
+
 export function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [password2, setPassword2] = useState('');
   const [busy, setBusy] = useState(false);
-  const [mode, setMode] = useState<'login' | 'reset'>('login');
+  const [mode, setMode] = useState<Mode>('login');
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  function switchTo(m: Mode) {
+    setMode(m);
+    setMsg(null);
+    setPassword('');
+    setPassword2('');
+  }
 
   async function submit(e: FormEvent) {
     e.preventDefault();
-    setBusy(true);
     setMsg(null);
+    if (mode === 'signup') {
+      if (password.length < 8) return setMsg({ ok: false, text: 'יש לבחור סיסמה של 8 תווים לפחות' });
+      if (password !== password2) return setMsg({ ok: false, text: 'הסיסמאות אינן זהות' });
+    }
+    setBusy(true);
     try {
       if (mode === 'login') await store.signIn(email, password);
-      else {
+      else if (mode === 'signup') {
+        const { needsConfirmation } = await store.signUp(email, password);
+        if (needsConfirmation) {
+          setMode('login');
+          setPassword('');
+          setPassword2('');
+          setMsg({ ok: true, text: `נשלח מייל אימות אל ${email.trim()}. יש ללחוץ על הקישור שבמייל ואז להתחבר.` });
+        }
+      } else {
         await store.sendPasswordReset(email);
         setMsg({ ok: true, text: 'אם הכתובת רשומה במערכת, נשלח אליה קישור לאיפוס סיסמה.' });
       }
@@ -29,37 +57,50 @@ export function Login() {
     <div className="auth-page">
       <form className="auth-card" onSubmit={submit}>
         <img className="logo-auth" src="/mody-logo-light.png" alt="MODY" />
-        <h1>{mode === 'login' ? 'דיווח משלוחים · סולל בונה' : 'איפוס סיסמה'}</h1>
-        {store.mode === 'mock' && <div className="msg ok">מצב הדגמה — ניתן להתחבר עם demo@mody.co.il וכל סיסמה.</div>}
+        <h1>{TITLES[mode]}</h1>
+        {store.mode === 'mock' && mode === 'login' && <div className="msg ok">מצב הדגמה — ניתן להתחבר עם demo@mody.co.il וכל סיסמה.</div>}
+        {mode === 'signup' && <div className="auth-note">ההרשמה פתוחה רק לכתובות שמנהל המערכת אישר מראש.</div>}
         <label htmlFor="email">אימייל</label>
         <input id="email" type="email" autoComplete="username" required value={email} onChange={(e) => setEmail(e.target.value)} />
-        {mode === 'login' && (
+        {mode !== 'reset' && (
           <>
-            <label htmlFor="password">סיסמה</label>
+            <label htmlFor="password">{mode === 'signup' ? 'בחירת סיסמה (8 תווים לפחות)' : 'סיסמה'}</label>
             <input
               id="password"
               type="password"
-              autoComplete="current-password"
+              autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
               required
               value={password}
               onChange={(e) => setPassword(e.target.value)}
             />
           </>
         )}
+        {mode === 'signup' && (
+          <>
+            <label htmlFor="password2">אימות סיסמה</label>
+            <input id="password2" type="password" autoComplete="new-password" required value={password2} onChange={(e) => setPassword2(e.target.value)} />
+          </>
+        )}
         <button className="cta" type="submit" disabled={busy}>
-          {busy ? '…' : mode === 'login' ? 'כניסה' : 'שלח קישור לאיפוס'}
+          {busy ? '…' : mode === 'login' ? 'כניסה' : mode === 'signup' ? 'הרשמה' : 'שלח קישור לאיפוס'}
         </button>
         {msg && <div className={'msg ' + (msg.ok ? 'ok' : 'err')}>{msg.text}</div>}
-        <button
-          type="button"
-          className="alt"
-          onClick={() => {
-            setMode(mode === 'login' ? 'reset' : 'login');
-            setMsg(null);
-          }}
-        >
-          {mode === 'login' ? 'שכחתי סיסמה' : 'חזרה לכניסה'}
-        </button>
+        <div className="auth-links">
+          {mode === 'login' ? (
+            <>
+              <button type="button" className="alt" onClick={() => switchTo('signup')}>
+                אין לך חשבון? הרשמה
+              </button>
+              <button type="button" className="alt" onClick={() => switchTo('reset')}>
+                שכחתי סיסמה
+              </button>
+            </>
+          ) : (
+            <button type="button" className="alt" onClick={() => switchTo('login')}>
+              חזרה לכניסה
+            </button>
+          )}
+        </div>
       </form>
     </div>
   );

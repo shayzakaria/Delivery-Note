@@ -83,7 +83,13 @@ export interface Member {
   role: Role;
   display_name: string | null;
   created_at: string;
+  /** Admin view only: whether this email already has an account. */
+  account_status?: AccountStatus;
+  last_sign_in_at?: string | null;
 }
+
+/** none = not registered yet, unconfirmed = registered but email not verified, active = can sign in. */
+export type AccountStatus = 'none' | 'unconfirmed' | 'active';
 
 export type AuthEvent = 'SIGNED_IN' | 'SIGNED_OUT' | 'PASSWORD_RECOVERY' | 'OTHER';
 
@@ -102,6 +108,8 @@ export interface DataStore {
   getUser(): Promise<SessionUser | null>;
   onAuthChange(cb: (event: AuthEvent, user: SessionUser | null) => void): () => void;
   signIn(email: string, password: string): Promise<void>;
+  /** Creates an account; only emails on the members list are accepted (enforced by the database). */
+  signUp(email: string, password: string): Promise<{ needsConfirmation: boolean }>;
   signOut(): Promise<void>;
   sendPasswordReset(email: string): Promise<void>;
   updatePassword(password: string): Promise<void>;

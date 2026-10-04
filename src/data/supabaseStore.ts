@@ -29,6 +29,11 @@ export function friendlyError(err: unknown): Error {
   if (/JWT expired|invalid JWT/i.test(msg)) return new Error('פג תוקף ההתחברות. התחבר מחדש.');
   if (/permission denied|row-level security|אין הרשאה/i.test(msg)) return new Error('אין הרשאה לפעולה זו');
   if (/Password should be at least/i.test(msg)) return new Error('הסיסמה קצרה מדי (לפחות 6 תווים)');
+  if (/Database error saving new user|EMAIL_NOT_ALLOWED/i.test(msg))
+    return new Error('כתובת המייל אינה ברשימת המורשים להרשמה. יש לפנות למנהל המערכת.');
+  if (/User already registered/i.test(msg)) return new Error('כבר קיים חשבון עם המייל הזה. אפשר להתחבר או לאפס סיסמה.');
+  if (/Signups not allowed/i.test(msg)) return new Error('ההרשמה לאתר סגורה כרגע. יש לפנות למנהל המערכת.');
+  if (/rate limit/i.test(msg)) return new Error('יותר מדי ניסיונות. נסה שוב בעוד כמה דקות.');
   if (/duplicate key/i.test(msg)) return new Error('הרשומה כבר קיימת');
   return new Error(msg);
 }
@@ -83,6 +88,14 @@ export class SupabaseStore implements DataStore {
 
   async signIn(email: string, password: string): Promise<void> {
     ensure(await this.sb.auth.signInWithPassword({ email: email.trim(), password }));
+  }
+
+  async signUp(email: string, password: string): Promise<{ needsConfirmation: boolean }> {
+    const data = check(
+      await this.sb.auth.signUp({ email: email.trim().toLowerCase(), password, options: { emailRedirectTo: window.location.origin } }),
+    );
+    // With email confirmation on, no session is returned until the link in the email is clicked.
+    return { needsConfirmation: !data.session };
   }
 
   async signOut(): Promise<void> {
@@ -299,9 +312,18 @@ export class SupabaseStore implements DataStore {
 
   // ---------------- members ----------------
   async listMembers(): Promise<Member[]> {
-    return check(
+    const members = check(
       await this.sb.from('app_members').select('email, role, display_name, created_at').order('created_at', { ascending: true }),
     ) as Member[];
+    // Account status is visible to admins only; for everyone else the RPC returns no rows.
+    const accounts = check(await this.sb.rpc('member_accounts')) as
+      | { email: string; account_status: Member['account_status']; last_sign_in_at: string | null }[]
+      | null;
+    const byEmail = new Map((accounts ?? []).map((a) => [a.email, a]));
+    return members.map((m) => {
+      const a = byEmail.get(m.email);
+      return a ? { ...m, account_status: a.account_status, last_sign_in_at: a.last_sign_in_at } : m;
+    });
   }
 
   async addMember(email: string, role: Role, displayName: string): Promise<void> {

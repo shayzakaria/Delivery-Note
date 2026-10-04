@@ -1,7 +1,13 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { store } from '../data/store';
-import type { Member, Role } from '../data/types';
+import type { AccountStatus, Member, Role } from '../data/types';
 import { dateTimeDisplay } from '../lib/format';
+
+const STATUS: Record<AccountStatus, { label: string; cls: string }> = {
+  active: { label: 'רשום ופעיל', cls: 'badge ok' },
+  unconfirmed: { label: 'נרשם, ממתין לאימות מייל', cls: 'badge diff' },
+  none: { label: 'טרם נרשם', cls: 'badge kind' },
+};
 
 export function AdminTab({ currentEmail }: { currentEmail: string }) {
   const [members, setMembers] = useState<Member[] | null>(null);
@@ -52,7 +58,10 @@ export function AdminTab({ currentEmail }: { currentEmail: string }) {
     <div className="scroll-page">
       <div className="page-narrow">
         <div className="section">
-          <div className="section-title">👥 משתמשים מורשים</div>
+          <div className="section-title">👥 כתובות מורשות</div>
+          <p className="hint" style={{ marginTop: 0 }}>
+            רק כתובות שמופיעות כאן יכולות להירשם לאתר ולהתחבר. מנהל רואה גם את הלשונית הזו.
+          </p>
           {error && <div className="alert alert-red">{error}</div>}
           <form className="form-row" onSubmit={add} style={{ marginBottom: 14 }}>
             <input type="email" placeholder="אימייל" dir="ltr" value={email} onChange={(e) => setEmail(e.target.value)} required style={{ width: 240 }} />
@@ -73,6 +82,7 @@ export function AdminTab({ currentEmail }: { currentEmail: string }) {
                     <th>אימייל</th>
                     <th>שם</th>
                     <th>הרשאה</th>
+                    <th>חשבון</th>
                     <th>נוסף</th>
                     <th />
                   </tr>
@@ -100,6 +110,10 @@ export function AdminTab({ currentEmail }: { currentEmail: string }) {
                           <option value="admin">מנהל</option>
                         </select>
                       </td>
+                      <td>
+                        {m.account_status ? <span className={STATUS[m.account_status].cls}>{STATUS[m.account_status].label}</span> : '–'}
+                        {m.last_sign_in_at && <div className="small-gray">כניסה אחרונה: {dateTimeDisplay(m.last_sign_in_at)}</div>}
+                      </td>
                       <td className="small-gray">{dateTimeDisplay(m.created_at)}</td>
                       <td>
                         <button
@@ -120,14 +134,14 @@ export function AdminTab({ currentEmail }: { currentEmail: string }) {
         <div className="section">
           <div className="section-title">איך מוסיפים משתמש חדש</div>
           <ol className="steps">
+            <li>מוסיפים כאן את כתובת המייל שלו ובוחרים הרשאה: <b>משתמש</b>, או <b>מנהל</b> שרואה גם את הלשונית הזו.</li>
             <li>
-              ב-Supabase: <b>Authentication → Users → Add user → Create new user</b>. מזינים את המייל וסיסמה זמנית ומסמנים <b>Auto Confirm User</b>.
+              שולחים לו את כתובת האתר. הוא לוחץ <b>"אין לך חשבון? הרשמה"</b>, מזין את אותו מייל ובוחר סיסמה.
             </li>
-            <li>כאן: מוסיפים את אותו מייל לרשימה למעלה ובוחרים הרשאה.</li>
-            <li>המשתמש נכנס עם הסיסמה הזמנית ומחליף אותה בתפריט המשתמש ← "שינוי סיסמה".</li>
+            <li>אחרי אימות המייל (אם נדרש) הוא נכנס לאתר. העמודה "חשבון" תתעדכן ל"רשום ופעיל".</li>
           </ol>
           <div className="hint">
-            גישה ניתנת רק למי שמופיע ברשימה <u>וגם</u> בעל חשבון מאומת. הסרה מהרשימה חוסמת את הגישה מיד, גם אם החשבון עדיין קיים.
+            כתובת שאינה ברשימה לא יכולה להירשם בכלל, גם לא דרך Supabase. הסרה מהרשימה חוסמת את הגישה מיד, גם אם החשבון כבר קיים.
           </div>
         </div>
       </div>
