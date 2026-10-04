@@ -41,10 +41,10 @@ npm run build        # בנייה לפרודקשן → dist/
 
 ## העלאה ל-Cloudflare
 
-האתר רץ כ-Worker בשם `mody-delivery-note` עם הדומיין **modycustomer.com** (וגם `www`). הדומיינים מוגדרים ב-[`wrangler.jsonc`](wrangler.jsonc) ומתחברים אוטומטית בכל פריסה.
+האתר רץ כ-Worker בשם `delivery-note` עם הדומיין **modycustomer.com** (וגם `www`). הדומיינים מוגדרים ב-[`wrangler.jsonc`](wrangler.jsonc) ומתחברים אוטומטית בכל פריסה.
 
 **חיבור ראשוני (פעם אחת):** Cloudflare → **Workers & Pages → Create application → Import a repository** → הריפו `shayzakaria/Delivery-Note`:
-- Project name: `mody-delivery-note` (חייב להיות זהה ל-`name` ב-`wrangler.jsonc`)
+- Project name: `delivery-note` (חייב להיות זהה ל-`name` ב-`wrangler.jsonc`)
 - Build command: `npm run build` · Deploy command: `npx wrangler deploy`
 - Production branch: `claude/dreamy-cray-iotdut`
 

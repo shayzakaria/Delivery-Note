@@ -1,7 +1,7 @@
 // Cloudflare deployment as static assets (Workers). Connected to GitHub via Workers Builds:
 // build command `npm run build`, deploy command `npx wrangler deploy` (see README).
 {
-  "name": "mody-delivery-note",
+  "name": "delivery-note",
   "compatibility_date": "2026-09-30",
   "assets": {
     "directory": "./dist",
