@@ -41,22 +41,19 @@ npm run build        # בנייה לפרודקשן → dist/
 
 ## העלאה ל-Cloudflare
 
-### אפשרות א׳ — Cloudflare Pages (מומלץ)
-1. ב-Cloudflare: **Workers & Pages → Create → Pages → Connect to Git** ובחירת הריפו `shayzakaria/Delivery-Note`.
-2. הגדרות בנייה: Framework preset: `Vite` · Build command: `npm run build` · Output directory: `dist`.
-3. (לא חובה) משתני סביבה — ברירות המחדל כבר מצביעות על הפרויקט:
-   `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY`.
-4. אחרי הרכישה: **Custom domains → Set up a custom domain** והזנת הדומיין (למשל `delivery.mody.co.il`).
+האתר רץ כ-Worker בשם `mody-delivery-note` עם הדומיין **modycustomer.com** (וגם `www`). הדומיינים מוגדרים ב-[`wrangler.jsonc`](wrangler.jsonc) ומתחברים אוטומטית בכל פריסה.
 
-### אפשרות ב׳ — Workers (static assets)
-```bash
-npm run build && npx wrangler deploy     # משתמש ב-wrangler.jsonc
-```
+**חיבור ראשוני (פעם אחת):** Cloudflare → **Workers & Pages → Create application → Import a repository** → הריפו `shayzakaria/Delivery-Note`:
+- Project name: `mody-delivery-note` (חייב להיות זהה ל-`name` ב-`wrangler.jsonc`)
+- Build command: `npm run build` · Deploy command: `npx wrangler deploy`
+- Production branch: `claude/dreamy-cray-iotdut`
+
+מאותו רגע כל push לענף הזה מתפרסם לאתר אוטומטית.
 
 ### אחרי שיש כתובת קבועה — חובה ב-Supabase
 **Authentication → URL Configuration**:
-- **Site URL**: כתובת האתר (למשל `https://delivery.mody.co.il`)
-- **Redirect URLs**: אותה כתובת — נדרש כדי שקישורי "שכחתי סיסמה" יחזרו לאתר.
+- **Site URL**: `https://modycustomer.com`
+- **Redirect URLs**: `https://modycustomer.com/**` וגם `https://www.modycustomer.com/**` — נדרש כדי שקישורי "שכחתי סיסמה" יחזרו לאתר.
 
 אם משנים את כתובת Supabase, יש לעדכן גם את `connect-src` ב-[`public/_headers`](public/_headers).
 

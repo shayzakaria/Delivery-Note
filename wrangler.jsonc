@@ -1,10 +1,15 @@
-// Cloudflare deployment as static assets (Workers). Cloudflare Pages works too:
-// build command `npm run build`, output directory `dist` (see README).
+// Cloudflare deployment as static assets (Workers). Connected to GitHub via Workers Builds:
+// build command `npm run build`, deploy command `npx wrangler deploy` (see README).
 {
   "name": "mody-delivery-note",
   "compatibility_date": "2026-09-30",
   "assets": {
     "directory": "./dist",
     "not_found_handling": "single-page-application"
-  }
+  },
+  // Attached automatically on every deploy; the zone must be in the same Cloudflare account.
+  "routes": [
+    { "pattern": "modycustomer.com", "custom_domain": true },
+    { "pattern": "www.modycustomer.com", "custom_domain": true }
+  ]
 }
