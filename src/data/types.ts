@@ -76,6 +76,8 @@ export interface BatchSummary {
 export interface HistoryLine extends HistLine {
   batch_id: string;
   created_at: string;
+  /** Who recorded the batch (absent if the server does not return it). */
+  created_by_email?: string | null;
 }
 
 export interface Member {

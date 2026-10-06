@@ -74,8 +74,34 @@ test.describe.serial('review regressions', () => {
     const d = tab(page, 'delivery');
     await d.getByRole('button', { name: '✕ נקה הכל' }).click();
     await po(page, 'PO202600000101').click();
-    await d.getByLabel("📄 מס' תעודת משלוח:").fill('700000003'); // same number as the report just made
+    const docInput = d.getByLabel("📄 מס' תעודת משלוח:");
+    await docInput.fill('700000003'); // same number as the report just made
+
+    // while typing: a non-blocking warning naming the earlier report
+    const dlg = page.getByRole('alertdialog');
+    await expect(dlg).toContainText('תעודה חוזרת');
+    await expect(dlg).toContainText('700000003');
+    await expect(dlg).toContainText('demo@mody.co.il');
+    await expect(dlg).toContainText('PO202600000404');
+
+    // "fix" returns to the field with the number selected
+    await dlg.getByRole('button', { name: 'תקן את המספר' }).click();
+    await expect(dlg).toHaveCount(0);
+    await expect(docInput).toBeFocused();
+    await page.keyboard.type('700000099'); // replaces the selected text
+    await expect(docInput).toHaveValue('700000099');
+    await page.waitForTimeout(900);
+    await expect(page.getByRole('alertdialog')).toHaveCount(0); // a new number raises nothing
+
+    // typing the repeated number again and choosing "continue" keeps it, with an inline note
+    await docInput.fill('700000003');
+    await page.getByRole('alertdialog').getByRole('button', { name: 'המשך בכל זאת' }).click();
+    await expect(page.getByRole('alertdialog')).toHaveCount(0);
+    await expect(docInput).toHaveValue('700000003');
+    await expect(d.getByTestId('doc-dup-note')).toContainText('תעודה זו כבר דווחה');
     await d.getByLabel('בחר שורה 2').check();
+    await page.waitForTimeout(900);
+    await expect(page.getByRole('alertdialog')).toHaveCount(0); // not asked twice for the same order
     await page.getByRole('button', { name: 'סיכום ויצוא ←' }).click();
     await expect(d.locator('.alert-amber')).toContainText('תעודות שכבר דווחו בעבר: 700000003');
   });

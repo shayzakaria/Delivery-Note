@@ -244,7 +244,7 @@ export class MockStore implements DataStore {
       if (b.kind !== 'delivery') continue;
       for (const l of b.doc_lines) {
         if (set.has(l.doc_number))
-          out.push({ doc_number: l.doc_number, po: l.po, line_no: l.line_no, sku: l.sku, qty: l.qty, price: l.price, batch_id: b.id, created_at: b.created_at });
+          out.push({ doc_number: l.doc_number, po: l.po, line_no: l.line_no, sku: l.sku, qty: l.qty, price: l.price, batch_id: b.id, created_at: b.created_at, created_by_email: b.created_by_email });
       }
     }
     return out;

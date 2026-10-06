@@ -233,6 +233,10 @@ tbody tr:hover { background: #fafbff; }
 .modal-back { position: fixed; inset: 0; background: rgba(0,0,0,.35); display: flex; align-items: center; justify-content: center; z-index: 100; }
 .modal { background: #fff; border-radius: 8px; padding: 20px; width: 100%; max-width: 360px; }
 .modal h3 { font-size: 15px; margin-bottom: 12px; }
+.dup-modal { max-width: 440px; }
+.dup-modal p { font-size: 13px; margin-bottom: 8px; line-height: 1.6; }
+.dup-modal ul { font-size: 13px; margin: 0 18px 10px 0; line-height: 1.7; }
+.modal-actions { display: flex; gap: 8px; justify-content: flex-start; margin-top: 12px; }
 .modal input { width: 100%; padding: 9px 10px; border: 1px solid #ccc; border-radius: 5px; margin-bottom: 10px; direction: ltr; }
 
 .form-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }

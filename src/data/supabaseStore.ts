@@ -278,7 +278,7 @@ export class SupabaseStore implements DataStore {
     for (const part of chunk([...new Set(docs.filter(Boolean))], 200)) {
       for (let from = 0; ; from += PAGE) {
         const rows = check(
-          await this.sb.rpc('delivery_history_for_docs', { p_docs: part }).range(from, from + PAGE - 1),
+          await this.sb.rpc('delivery_history_with_reporter', { p_docs: part }).range(from, from + PAGE - 1),
         ) as Record<string, unknown>[];
         for (const r of rows) {
           out.push({
@@ -290,6 +290,7 @@ export class SupabaseStore implements DataStore {
             price: num(r.price),
             batch_id: String(r.batch_id),
             created_at: String(r.created_at),
+            created_by_email: typeof r.created_by_email === 'string' ? r.created_by_email : null,
           });
         }
         if (rows.length < PAGE) break;

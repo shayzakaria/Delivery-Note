@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FolderDrop } from '../components/FolderDrop';
 import { store } from '../data/store';
-import { SessionChangedError, type DocLineRecord } from '../data/types';
+import { SessionChangedError, type DocLineRecord, type HistoryLine } from '../data/types';
 import {
   buildDocCsv,
   DOC_KINDS,
@@ -25,6 +25,32 @@ type View = 'items' | 'export';
 type SaveState = 'idle' | 'saving' | 'saved' | 'error';
 
 const emptyDraft = (): DraftState => ({ docNumber: '', docDate: todayISO(), items: {} });
+
+/** One earlier export that contained a given document number. */
+interface DupReport {
+  at: string;
+  by: string | null;
+  pos: string[];
+  lines: number;
+}
+interface DupPrompt {
+  po: string;
+  doc: string;
+  reports: DupReport[];
+  otherPOs: string[];
+}
+
+/** History rows for one document number → one entry per export, newest first. */
+function groupReports(rows: HistoryLine[]): DupReport[] {
+  const byBatch = new Map<string, DupReport>();
+  for (const r of rows) {
+    const g = byBatch.get(r.batch_id) ?? { at: r.created_at, by: r.created_by_email ?? null, pos: [], lines: 0 };
+    if (!g.pos.includes(r.po)) g.pos.push(r.po);
+    g.lines++;
+    byBatch.set(r.batch_id, g);
+  }
+  return [...byBatch.values()].sort((a, b) => b.at.localeCompare(a.at));
+}
 
 export function DocReportTab({ kind, userId }: { kind: DocKind; userId: string }) {
   const cfg = DOC_KINDS[kind];
@@ -284,6 +310,58 @@ export function DocReportTab({ kind, userId }: { kind: DocKind; userId: string }
     };
   }, [isDelivery, view, docKey, currentCsv]);
 
+  // ---------------- repeated document number (while typing) ----------------
+  // A delivery-note number that is already in the history, or already used on another
+  // order in this selection, raises a warning: the user may continue or fix it. Only
+  // typing opens the popup; moving between orders just shows the inline note.
+  const [dupReports, setDupReports] = useState<Map<string, DupReport[]>>(new Map());
+  const [dupPrompt, setDupPrompt] = useState<DupPrompt | null>(null);
+  const typedDoc = useRef<string | null>(null); // `${po}|${doc}` of the last keystroke
+  const dupAcked = useRef(new Set<string>()); // `${po}|${doc}` the user chose to keep
+  const activeDocSent = isDelivery && activePO ? normalizeDocNumber((drafts[activePO]?.docNumber ?? '').trim(), cfg.pdfPrefix) : '';
+
+  useEffect(() => {
+    if (!activePO || !/^\d+$/.test(activeDocSent)) return;
+    const po = activePO;
+    const doc = activeDocSent;
+    let alive = true;
+    const t = window.setTimeout(() => {
+      store
+        .deliveryHistoryForDocs([doc])
+        .then((rows) => {
+          if (!alive) return;
+          const reports = groupReports(rows);
+          setDupReports((m) => new Map(m).set(doc, reports));
+          const key = `${po}|${doc}`;
+          if (typedDoc.current !== key || dupAcked.current.has(key)) return;
+          const otherPOs = Object.entries(draftsRef.current)
+            .filter(([p, d]) => p !== po && Object.keys(d.items).length > 0 && normalizeDocNumber(d.docNumber.trim(), cfg.pdfPrefix) === doc)
+            .map(([p]) => p);
+          if (!reports.length && !otherPOs.length) return;
+          typedDoc.current = null;
+          setDupPrompt({ po, doc, reports, otherPOs });
+        })
+        .catch(() => {
+          /* the check is advisory; export still re-checks the history */
+        });
+    }, 600);
+    return () => {
+      alive = false;
+      window.clearTimeout(t);
+    };
+  }, [activePO, activeDocSent, cfg.pdfPrefix]);
+
+  function closeDupPrompt(choice: 'continue' | 'fix') {
+    if (!dupPrompt) return;
+    setDupPrompt(null);
+    if (choice === 'continue') dupAcked.current.add(`${dupPrompt.po}|${dupPrompt.doc}`);
+    else
+      window.setTimeout(() => {
+        docInputRef.current?.focus();
+        docInputRef.current?.select();
+      }, 0);
+  }
+
   // ---------------- export ----------------
   const [busy, setBusy] = useState(false);
   const [lastExport, setLastExport] = useState<string | null>(null);
@@ -360,6 +438,7 @@ export function DocReportTab({ kind, userId }: { kind: DocKind; userId: string }
             doc_lines: docLines,
           });
           recorded.current.set(csv, id);
+          setDupReports(new Map()); // these numbers are in the history now
         } catch (e) {
           const msg = e instanceof Error ? e.message : String(e);
           if (!confirm(`שמירת הדיווח בהיסטוריה נכשלה:\n${msg}\n\nלהוריד את הקובץ בכל זאת?`)) return;
@@ -584,7 +663,10 @@ export function DocReportTab({ kind, userId }: { kind: DocKind; userId: string }
                     className={'doc-input' + (activeDraft.docNumber ? ' filled' : '')}
                     placeholder={isDelivery ? 'הקלד מספר תעודה...' : 'הקלד מספר חשבונית...'}
                     value={activeDraft.docNumber}
-                    onChange={(e) => updateDraft(active.po, (d) => ({ ...d, docNumber: e.target.value }))}
+                    onChange={(e) => {
+                      typedDoc.current = `${active.po}|${normalizeDocNumber(e.target.value.trim(), cfg.pdfPrefix)}`;
+                      updateDraft(active.po, (d) => ({ ...d, docNumber: e.target.value }));
+                    }}
                   />
                   <label className="plain" htmlFor={`date-${kind}`}>
                     תאריך:
@@ -609,6 +691,16 @@ export function DocReportTab({ kind, userId }: { kind: DocKind; userId: string }
                         </span>
                       );
                     return null;
+                  })()}
+                  {(() => {
+                    const prior = dupReports.get(activeDocSent);
+                    if (!prior?.length) return null;
+                    return (
+                      <span className="doc-warn" data-testid="doc-dup-note">
+                        ⚠ {cfg.docLabelShort} זו כבר דווחה ב-{dateTimeDisplay(prior[0].at)}
+                        {prior.length > 1 ? ` (ועוד ${prior.length - 1})` : ''}
+                      </span>
+                    );
                   })()}
                 </div>
                 <div className="items-card">
@@ -855,6 +947,55 @@ export function DocReportTab({ kind, userId }: { kind: DocKind; userId: string }
           )}
         </div>
       </section>
+      {dupPrompt && <DupDialog prompt={dupPrompt} label={cfg.docLabelShort} onClose={closeDupPrompt} />}
+    </div>
+  );
+}
+
+/** Non-blocking warning: the number was used before. Continue keeps it, fix returns to the field. */
+function DupDialog({ prompt, label, onClose }: { prompt: DupPrompt; label: string; onClose: (c: 'continue' | 'fix') => void }) {
+  return (
+    <div className="modal-back" onMouseDown={(e) => e.target === e.currentTarget && onClose('fix')}>
+      <div
+        className="modal dup-modal"
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="dup-title"
+        onKeyDown={(e) => e.key === 'Escape' && onClose('fix')}
+      >
+        <h3 id="dup-title">⚠ {label} חוזרת</h3>
+        <p>
+          {label} מספר <b dir="ltr">{prompt.doc}</b>, בהזמנה <bdi dir="ltr">{prompt.po}</bdi>:
+        </p>
+        <ul>
+          {prompt.reports.map((r, i) => (
+            <li key={i}>
+              כבר דווחה ב-<b>{dateTimeDisplay(r.at)}</b>
+              {r.by ? (
+                <>
+                  {' '}
+                  על ידי <bdi dir="ltr">{r.by}</bdi>
+                </>
+              ) : null}
+              , בהזמנה <bdi dir="ltr">{r.pos.join(', ')}</bdi> ({r.lines === 1 ? 'שורה אחת' : `${r.lines} שורות`})
+            </li>
+          ))}
+          {prompt.otherPOs.length > 0 && (
+            <li>
+              מופיעה גם בהזמנה <bdi dir="ltr">{prompt.otherPOs.join(', ')}</bdi> בבחירה הנוכחית
+            </li>
+          )}
+        </ul>
+        <p className="small-gray">זו התראה בלבד. אפשר להמשיך עם המספר הזה או לתקן אותו.</p>
+        <div className="modal-actions">
+          <button className="btn btn-primary" autoFocus onClick={() => onClose('fix')}>
+            תקן את המספר
+          </button>
+          <button className="btn" onClick={() => onClose('continue')}>
+            המשך בכל זאת
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
