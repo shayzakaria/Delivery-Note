@@ -313,18 +313,9 @@ export class SupabaseStore implements DataStore {
 
   // ---------------- members ----------------
   async listMembers(): Promise<Member[]> {
-    const members = check(
+    return check(
       await this.sb.from('app_members').select('email, role, display_name, created_at').order('created_at', { ascending: true }),
     ) as Member[];
-    // Account status is visible to admins only; for everyone else the RPC returns no rows.
-    const accounts = check(await this.sb.rpc('member_accounts')) as
-      | { email: string; account_status: Member['account_status']; last_sign_in_at: string | null }[]
-      | null;
-    const byEmail = new Map((accounts ?? []).map((a) => [a.email, a]));
-    return members.map((m) => {
-      const a = byEmail.get(m.email);
-      return a ? { ...m, account_status: a.account_status, last_sign_in_at: a.last_sign_in_at } : m;
-    });
   }
 
   async addMember(email: string, role: Role, displayName: string): Promise<void> {
@@ -337,5 +328,10 @@ export class SupabaseStore implements DataStore {
 
   async removeMember(email: string): Promise<void> {
     check(await this.sb.from('app_members').delete().eq('email', email));
+  }
+
+  // ---------------- admin-only server functions ----------------
+  async adminRpc(name: string): Promise<unknown> {
+    return check(await this.sb.rpc(name));
   }
 }

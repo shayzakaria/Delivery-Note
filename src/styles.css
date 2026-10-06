@@ -254,3 +254,41 @@ tbody tr:hover { background: #fafbff; }
 /* MODY logo: white version on the black top bar, black version on white cards */
 .logo-header { height: 26px; width: auto; display: block; }
 .auth-card .logo-auth { height: 34px; width: auto; display: block; margin: 0 auto 12px; }
+
+/* ---------- admin: sub-tabs & analytics ---------- */
+.admin-subtabs { display: flex; gap: 6px; margin-bottom: 14px; border-bottom: 1px solid #e0e0e0; }
+.admin-subtabs button { background: none; border: none; border-bottom: 2px solid transparent; padding: 8px 14px; font-size: 13px; font-weight: 600; color: #666; cursor: pointer; margin-bottom: -1px; }
+.admin-subtabs button.on { color: var(--mody-black); border-bottom-color: var(--mody-red); }
+.viz-root {
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --series-3: #1baf7a;
+}
+.an-toolbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+.an-toolbar .btn { margin-right: auto; }
+.an-periods { display: flex; gap: 4px; }
+.an-chip { border: 1px solid #ccc; background: #fff; border-radius: 14px; padding: 4px 12px; font-size: 12px; cursor: pointer; color: #333; }
+.an-chip.on { background: var(--mody-black); border-color: var(--mody-black); color: #fff; }
+.an-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; margin-bottom: 12px; }
+.an-kpi { background: #fff; border: 1px solid #e0e0e0; border-radius: 8px; padding: 12px 14px; }
+.an-kpi-label { font-size: 12px; color: #666; }
+.an-kpi-value { font-size: 24px; font-weight: 700; margin-top: 4px; color: #111; white-space: nowrap; }
+.an-kpi-sub { font-size: 11px; color: #777; margin-top: 4px; line-height: 1.5; }
+.an-kpi.st-warn { border-color: #f0c674; }
+.an-kpi.st-stale { border-color: #ef9a9a; }
+.an-legend { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; font-size: 12px; color: #444; margin-bottom: 8px; }
+.an-legend i, .an-tip i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-left: 5px; vertical-align: -1px; }
+.an-table-toggle { margin-right: auto; }
+.an-chart { position: relative; width: 100%; overflow: hidden; }
+.an-grid { stroke: #eee; stroke-width: 1; }
+.an-baseline { stroke: #bbb; stroke-width: 1; }
+.an-axis { font-size: 10px; fill: #888; }
+.an-value { font-size: 10px; fill: #333; font-weight: 600; }
+.an-tip { position: absolute; transform: translateX(-50%); background: #fff; border: 1px solid #ddd; border-radius: 6px; box-shadow: 0 2px 8px rgba(0,0,0,.12); padding: 8px 10px; font-size: 12px; color: #222; pointer-events: none; white-space: nowrap; line-height: 1.7; }
+.an-tip-total { border-top: 1px solid #eee; margin-top: 3px; padding-top: 3px; font-weight: 600; }
+.an-table { width: 100%; font-size: 12px; }
+.an-table td { vertical-align: top; }
+.an-table td.num { font-variant-numeric: tabular-nums; }
+.an-title-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+.an-title-row select { padding: 3px 6px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; }
+.an-chips-row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }

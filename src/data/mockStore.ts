@@ -5,6 +5,7 @@ import type { DocKind } from '../lib/docExport';
 import type { InvoiceCsvLine } from '../lib/invoiceMatch';
 import type { PoLine } from '../lib/openOrders';
 import type {
+  AdminAnalytics,
   AuthEvent,
   BatchSummary,
   DataStore,
@@ -33,7 +34,7 @@ interface MockDb {
   user: SessionUser | null;
   members: Member[];
   imports: (ImportInfo & { lines: PoLine[] })[];
-  drafts: (DraftRecord & { user_id: string })[];
+  drafts: (DraftRecord & { user_id: string; updated_at?: string })[];
   batches: Batch[];
 }
 
@@ -175,7 +176,7 @@ export class MockStore implements DataStore {
     const u = this.requireMember();
     if (u.id !== userId) throw new SessionChangedError();
     this.db.drafts = this.db.drafts.filter((x) => !(x.user_id === u.id && x.kind === d.kind && x.po === d.po));
-    this.db.drafts.push({ ...d, user_id: u.id });
+    this.db.drafts.push({ ...d, user_id: u.id, updated_at: new Date().toISOString() });
     this.save();
   }
 
@@ -261,12 +262,21 @@ export class MockStore implements DataStore {
   }
 
   async listMembers() {
-    const u = this.requireMember();
-    const admin = this.db.members.find((m) => m.email === u.email.toLowerCase())?.role === 'admin';
-    // The demo has no account table: the signed-in user counts as registered, everyone else as not yet.
-    return this.db.members.map((m) =>
-      admin ? { ...m, account_status: m.email === u.email.toLowerCase() ? ('active' as const) : ('none' as const), last_sign_in_at: null } : { ...m },
-    );
+    this.requireMember();
+    return this.db.members.map((m) => ({ ...m }));
+  }
+
+  async adminRpc(name: string): Promise<unknown> {
+    const me = this.requireMember();
+    const admin = this.db.members.find((m) => m.email === me.email.toLowerCase())?.role === 'admin';
+    if (name === 'member_accounts') {
+      // The demo has no account table: the signed-in user counts as registered, everyone else as not yet.
+      return admin
+        ? this.db.members.map((m) => ({ email: m.email, account_status: m.email === me.email.toLowerCase() ? 'active' : 'none', last_sign_in_at: null }))
+        : [];
+    }
+    if (name === 'admin_analytics') return this.adminAnalytics();
+    throw new Error(`unknown function ${name}`);
   }
 
   async addMember(email: string, role: Role, displayName: string) {
@@ -297,5 +307,73 @@ export class MockStore implements DataStore {
     }
     this.db.members = this.db.members.filter((x) => x.email !== email);
     this.save();
+  }
+
+  private async adminAnalytics(): Promise<AdminAnalytics | null> {
+    const me = this.requireMember();
+    if (this.db.members.find((m) => m.email === me.email.toLowerCase())?.role !== 'admin') return null;
+    const emailOf = (userId: string) => userId.replace(/^mock-/, '');
+    const maxAt = (xs: (string | undefined)[]) => xs.filter(Boolean).sort().at(-1) ?? null;
+    const openDrafts = this.db.drafts.filter((d) => Object.keys(d.items).length > 0);
+    // Duplicate delivery-note numbers across batches
+    const byDoc = new Map<string, Map<string, { created_at: string; email: string | null; pos: Set<string>; lines: number }>>();
+    for (const b of this.db.batches) {
+      if (b.kind !== 'delivery') continue;
+      for (const l of b.doc_lines) {
+        const m = byDoc.get(l.doc_number) ?? new Map();
+        const r = m.get(b.id) ?? { created_at: b.created_at, email: b.created_by_email, pos: new Set<string>(), lines: 0 };
+        r.pos.add(l.po);
+        r.lines++;
+        m.set(b.id, r);
+        byDoc.set(l.doc_number, m);
+      }
+    }
+    return {
+      generated_at: new Date().toISOString(),
+      users: this.db.members.map((m) => {
+        const mine = openDrafts.filter((d) => emailOf(d.user_id) === m.email);
+        const active = m.email === me.email.toLowerCase();
+        return {
+          email: m.email,
+          display_name: m.display_name,
+          role: m.role,
+          registered: active || mine.length > 0,
+          last_sign_in_at: active ? new Date().toISOString() : null,
+          last_export_at: maxAt(this.db.batches.filter((b) => b.created_by_email === m.email).map((b) => b.created_at)),
+          last_import_at: maxAt(this.db.imports.filter((i) => i.created_by_email === m.email).map((i) => i.created_at)),
+          last_draft_at: maxAt(mine.map((d) => d.updated_at)),
+          open_drafts: mine.length,
+        };
+      }),
+      batches: [...this.db.batches]
+        .sort((a, b) => a.created_at.localeCompare(b.created_at))
+        .map((b) => ({ kind: b.kind, created_at: b.created_at, email: b.created_by_email, lines: b.line_count, value: b.total_value })),
+      imports: this.db.imports.slice(0, 10).map((i) => ({
+        created_at: i.created_at,
+        email: i.created_by_email,
+        file_name: i.file_name,
+        file_modified_at: i.file_modified_at,
+        rows: i.row_count,
+        pos: i.po_count,
+      })),
+      duplicate_docs: [...byDoc]
+        .filter(([, m]) => m.size > 1)
+        .map(([doc_number, m]) => ({
+          doc_number,
+          reports: [...m.values()]
+            .sort((a, b) => a.created_at.localeCompare(b.created_at))
+            .map((r) => ({ created_at: r.created_at, email: r.email, pos: [...r.pos].sort(), lines: r.lines })),
+        })),
+      open_drafts: openDrafts
+        .map((d) => ({
+          email: emailOf(d.user_id),
+          kind: d.kind,
+          po: d.po,
+          doc_number: d.doc_number || null,
+          updated_at: d.updated_at ?? new Date().toISOString(),
+          items: Object.keys(d.items).length,
+        }))
+        .sort((a, b) => a.updated_at.localeCompare(b.updated_at)),
+    };
   }
 }

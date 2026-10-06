@@ -93,6 +93,54 @@ export interface Member {
 /** none = not registered yet, unconfirmed = registered but email not verified, active = can sign in. */
 export type AccountStatus = 'none' | 'unconfirmed' | 'active';
 
+/** Admin dashboard data (see private.admin_analytics in the migrations). */
+export interface AnalyticsUser {
+  email: string;
+  display_name: string | null;
+  role: Role;
+  registered: boolean;
+  last_sign_in_at: string | null;
+  last_export_at: string | null;
+  last_import_at: string | null;
+  last_draft_at: string | null;
+  open_drafts: number;
+}
+export interface AnalyticsBatch {
+  kind: ExportKind;
+  created_at: string;
+  email: string | null;
+  lines: number;
+  value: number;
+}
+export interface AnalyticsImport {
+  created_at: string;
+  email: string | null;
+  file_name: string;
+  file_modified_at: string | null;
+  rows: number;
+  pos: number;
+}
+export interface AnalyticsDuplicate {
+  doc_number: string;
+  reports: { created_at: string; email: string | null; pos: string[]; lines: number }[];
+}
+export interface AnalyticsDraft {
+  email: string | null;
+  kind: DocKind;
+  po: string;
+  doc_number: string | null;
+  updated_at: string;
+  items: number;
+}
+export interface AdminAnalytics {
+  generated_at: string;
+  users: AnalyticsUser[];
+  batches: AnalyticsBatch[];
+  imports: AnalyticsImport[];
+  duplicate_docs: AnalyticsDuplicate[];
+  open_drafts: AnalyticsDraft[];
+}
+
 export type AuthEvent = 'SIGNED_IN' | 'SIGNED_OUT' | 'PASSWORD_RECOVERY' | 'OTHER';
 
 /** Thrown when a write was prepared for one user but the session now belongs to another (or none). */
@@ -143,4 +191,8 @@ export interface DataStore {
   addMember(email: string, role: Role, displayName: string): Promise<void>;
   setMemberRole(email: string, role: Role): Promise<void>;
   removeMember(email: string): Promise<void>;
+
+  // --- admin-only server functions (empty / null unless the caller is an admin) ---
+  /** The function name is passed in by the admin screens, so it only appears in their code bundle. */
+  adminRpc(name: string): Promise<unknown>;
 }

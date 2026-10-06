@@ -1,14 +1,16 @@
-import { useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { AuthGate } from './auth/AuthGate';
 import { APP_VERSION } from './config';
 import { store } from './data/store';
 import type { Role, SessionUser } from './data/types';
 import { OpenOrdersProvider } from './state/OpenOrders';
 import { flushAllPending } from './state/pendingSaves';
-import { AdminTab } from './tabs/AdminTab';
 import { DocReportTab } from './tabs/DocReportTab';
 import { HistoryTab } from './tabs/HistoryTab';
 import { MatchTab } from './tabs/MatchTab';
+
+// Admin-only screens live in their own bundle chunk, downloaded only for admins.
+const AdminTab = lazy(() => import('./tabs/AdminTab').then((m) => ({ default: m.AdminTab })));
 
 type TabId = 'delivery' | 'history' | 'invoice' | 'match' | 'admin';
 
@@ -108,7 +110,9 @@ function Shell({ user, role }: { user: SessionUser; role: Role }) {
         </div>
         {role === 'admin' && (
           <div className="tab-root" data-testid="tab-admin" hidden={tab !== 'admin'}>
-            <AdminTab currentEmail={user.email} />
+            <Suspense fallback={<div className="center-screen">טוען…</div>}>
+              <AdminTab currentEmail={user.email} />
+            </Suspense>
           </div>
         )}
       </main>
