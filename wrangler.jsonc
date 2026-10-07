@@ -6,6 +6,9 @@
   // Every non-production branch gets its own preview URL (*-delivery-note.<account>.workers.dev)
   // for review before merging to main. Explicit, because the default follows workers_dev (off).
   "preview_urls": true,
+  // Required by `wrangler preview` (Worker Previews). Empty: previews use the same static
+  // assets and settings as production; there are no bindings, vars or secrets to override.
+  "previews": {},
   "assets": {
     "directory": "./dist",
     "not_found_handling": "single-page-application"
